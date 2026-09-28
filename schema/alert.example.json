@@ -1,0 +1,30 @@
+{
+  "alert_id": "a-0007",
+  "time": "2026-11-10T14:03:22",
+  "detection_id": "d1",
+  "position": {
+    "lat": 37.5118,
+    "lon": 127.0405,
+    "error_radius_m": 55
+  },
+  "location_verdict": "모호",
+  "land_use": [
+    {
+      "name": "보전산지",
+      "ratio": 0.57
+    },
+    {
+      "name": "제1종일반주거지역",
+      "ratio": 0.33
+    }
+  ],
+  "evidence": {
+    "buildings_in_radius": 12,
+    "slope_deg": 21
+  },
+  "description": null,
+  "latency_ms": {
+    "detect_to_alert": 380,
+    "alert_to_description": null
+  }
+}
