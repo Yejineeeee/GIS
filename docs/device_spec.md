@@ -109,5 +109,4 @@ export OMP_NUM_THREADS=4 MKL_NUM_THREADS=4
 ## 측정 기록
 
 | 날짜 | 기기 | 제한 방법 | nproc | 메모리 | 비고 |
-|---|---|---|---|---|---|
-| | | | | | |
+| 2026-10-04 | 박서연 노트북 | WSL2 (.wslconfig: processors=4, memory=8GB, swap=0) | 4 | 7.8Gi, Swap 0B | 하이브리드 CPU라 어떤 코어 4개가 잡히는지는 지정 안 됨 |
