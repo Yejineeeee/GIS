@@ -146,7 +146,7 @@ for frame_id, path in enumerate(files):
         "schema_version": "0.2",
         "video_id": args.video_id,
         "frame_id": frame_id,
-        "time": (t0 + timedelta(seconds=args.interval * frame_id)).isoformat(),
+        "time": (t0 + timedelta(seconds=args.interval * frame_id)).isoformat(timespec="milliseconds"),
         "image": path.as_posix(),
         "image_size": {"width": width, "height": height},
         "detections": detections,
