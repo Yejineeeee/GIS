@@ -18,7 +18,8 @@
 | 이름 | 기기 | CPU 모델 | 코어(물리/논리) | 메모리 | GPU | GPU 메모리 | OS |
 |---|---|---|---|---|---|---|---|
 | 이예진 | 노트북 | Intel Core Ultra 7 155H | 16 / 22 | 32GB | NVIDIA GeForce RTX 3050 Laptop + Intel Arc (내장), NPU: Intel AI Boost | 전용 4GB (RTX 3050), 공유 15.8GB | Windows |
-| 이예진 | 폰 | Apple A16 (iPhone 15) | 6 / 6 | 6GB | 내장 | - | iOS || 박서연 | 노트북 | Intel Core Ultra 7 255U | 12 / 14 | 32GB | Intel Graphics (내장), NPU: Intel AI Boost | 전용 없음, 공유 최대 17.9GB | Windows |
+| 이예진 | 폰 | Apple A16 (iPhone 15) | 6 / 6 | 6GB | 내장 | - | iOS |
+| 박서연 | 노트북 | Intel Core Ultra 7 255U | 12 / 14 | 32GB | Intel Graphics (내장), NPU: Intel AI Boost | 전용 없음, 공유 최대 17.9GB | Windows |
 | 박서연 | 폰 | Apple A18 (iPhone 16) | 6 / 6 | 8GB | 내장 | - | iOS |
 | 이수진 | 노트북 | Intel Core i5-8210Y | 2 / 4 | 8GB | Intel UHD Graphics 617 (내장) | 전용 없음, 동적 최대 1.5GB | macOS |
 | 이수진 | 폰 | Apple A16 (iPhone 14 Pro) | 6 / 6 | 6GB | 내장 | - | iOS |
