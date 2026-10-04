@@ -1,36 +1,17 @@
 {
+  "schema_version": "0.2",
+  "video_id": "V0012",
   "frame_id": 42,
-  "time": "2026-11-10T14:03:21",
+  "time": "2026-11-10T14:03:21+09:00",
   "image": "frames/000042.jpg",
+  "image_size": { "width": 1280, "height": 920 },
   "detections": [
     {
-      "id": "d1",
-      "class": "연기",
+      "id": "V0012-42-0",
+      "class": "smoke",
       "score": 0.87,
-      "bbox": [
-        120,
-        340,
-        260,
-        190
-      ],
-      "polygon": [
-        [
-          120,
-          340
-        ],
-        [
-          380,
-          340
-        ],
-        [
-          380,
-          530
-        ],
-        [
-          120,
-          530
-        ]
-      ],
+      "bbox": [120, 340, 260, 190],
+      "polygon": [[120, 340], [380, 340], [380, 530], [120, 530]],
       "area_px": 49400,
       "area_ratio": 0.042
     }
@@ -39,6 +20,11 @@
     "lat": 37.5121,
     "lon": 127.0412,
     "alt_m": 100.0,
-    "angle_deg": 45
-  }
+    "alt_ref": "AGL",
+    "heading_deg": 135.0,
+    "pitch_deg": -45.0,
+    "hfov_deg": 84.0,
+    "source": "exif"
+  },
+  "latency_ms": { "detect": 142 }
 }
