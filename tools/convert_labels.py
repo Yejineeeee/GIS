@@ -172,7 +172,7 @@ for i, (file_name, lines) in enumerate(pairs):
 
 with open(os.path.join(OUT, "dataset.yaml"), "w", encoding="utf-8") as f:
     f.write(f"path: {os.path.abspath(OUT)}\ntrain: images/train\nval: images/val\n\n"
-            "names:\n  0: smoke\n")
+            "names:\n  0: 연기\n")
 
 print("\n결과")
 for k, v in stat.most_common():

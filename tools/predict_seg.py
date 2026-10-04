@@ -13,7 +13,7 @@ from datetime import datetime, timezone, timedelta
 
 KST = timezone(timedelta(hours=9))
 
-CLASS_NAME = "smoke"      # 스키마 v0.2 는 클래스를 한 종류로 둔다
+CLASS_NAME = "연기"       # 스키마 v0.2 는 클래스를 한 종류로 둔다
 CONF = float(os.environ.get("DET_CONF", "0.25"))
 SCHEMA_VERSION = "0.2"
 
