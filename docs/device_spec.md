@@ -3,7 +3,7 @@
 현장 기기에서 동작하는지 측정하기 위한 기준 환경을 정한다. 팀원 기기 사양을 모으고,
 모든 측정은 아래 기준으로 제한한 환경에서 한다. GPU 결과는 참고용으로만 남긴다.
 
-담당: 박서연 / 상태: 작성 중
+담당: 박서연 / 상태: 검토 요청
 
 ## 기준
 
@@ -17,15 +17,17 @@
 
 | 이름 | 기기 | CPU 모델 | 코어(물리/논리) | 메모리 | GPU | GPU 메모리 | OS |
 |---|---|---|---|---|---|---|---|
-| 이예진 | 노트북 | | | | | | |
-| 이예진 | 폰 | | | | - | - | |
-| 박서연 | 노트북 | Intel Core Ultra 7 255U | 12 / 14 | 32GB | Intel Graphics (내장), NPU: Intel AI Boost | 전용 없음, 공유 최대 17.9GB | Windows |
+| 이예진 | 노트북 | Intel Core Ultra 7 155H | 16 / 22 | 32GB | NVIDIA GeForce RTX 3050 Laptop + Intel Arc (내장), NPU: Intel AI Boost | 전용 4GB (RTX 3050), 공유 15.8GB | Windows |
+| 이예진 | 폰 | Apple A16 (iPhone 15) | 6 / 6 | 6GB | 내장 | - | iOS || 박서연 | 노트북 | Intel Core Ultra 7 255U | 12 / 14 | 32GB | Intel Graphics (내장), NPU: Intel AI Boost | 전용 없음, 공유 최대 17.9GB | Windows |
 | 박서연 | 폰 | Apple A18 (iPhone 16) | 6 / 6 | 8GB | 내장 | - | iOS |
-| 이수진 | 노트북 | | | | | | |
-| 이수진 | 폰 | | | | - | - | |
+| 이수진 | 노트북 | Intel Core i5-8210Y | 2 / 4 | 8GB | Intel UHD Graphics 617 (내장) | 전용 없음, 동적 최대 1.5GB | macOS |
+| 이수진 | 폰 | Apple A16 (iPhone 14 Pro) | 6 / 6 | 6GB | 내장 | - | iOS |
 
+- 이예진 노트북: 팀에서 유일한 NVIDIA GPU. GPU 참고 측정은 이 기기에서 한다. 전용 메모리 4GB라 큰 모델은 GPU에 다 올라가지 않을 수 있다.
 - 박서연 노트북: 하이브리드 CPU(성능 2 + 효율 2 + 저전력 효율 8 구조 계열). 4코어 제한 시 어떤 코어가 잡히는지에 따라 측정값이 달라질 수 있다.
-
+- 이수진 노트북: 기준(4코어, 8GB) 미만. 기준 측정에는 쓰지 않고, 저사양 참고용으로만 쓴다.
+- 기준의 "4코어"는 논리 코어 4개(nproc 4) 기준이다.
+  
 ### 사양 확인 방법
 
 Windows (PowerShell):
