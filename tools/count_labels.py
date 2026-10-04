@@ -42,6 +42,7 @@ def env_of(label):
 
 def stat(items, title):
     device = Counter()
+    place = Counter()
     per_class_obj = Counter()
     per_class_img = Counter()
     gps = elevation = 0
@@ -49,6 +50,7 @@ def stat(items, title):
     for _, label in items:
         env = env_of(label)
         device[str(env.get("device", "")).strip() or "(없음)"] += 1
+        place[str(env.get("address", "")).strip() or "(없음)"] += 1
         if str(env.get("gps", "")).strip():
             gps += 1
         if str(env.get("elevation", "")).strip():
@@ -69,6 +71,9 @@ def stat(items, title):
     print(f"  GPS 채워진 비율: {gps / total:.1%}   고도 채워진 비율: {elevation / total:.1%}")
     print("  클래스별 객체 수:", dict(per_class_obj.most_common()))
     print("  클래스별 이미지 수:", dict(per_class_img.most_common()))
+    print("  촬영 장소 상위 10곳:")
+    for name, count in place.most_common(10):
+        print(f"    {name}: {count}")
 
 
 loaded = []
