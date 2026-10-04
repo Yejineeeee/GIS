@@ -9,10 +9,13 @@
 Windows 주의. main 가드를 지우면 데이터 로더가 이 파일을 다시 실행한다.
 """
 import sys, os, json, time, statistics
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
-CLASSES = {0: "흑색연기", 1: "백색및회색연기"}
+KST = timezone(timedelta(hours=9))
+
+CLASS_NAME = "smoke"      # 스키마 v0.2 는 클래스를 한 종류로 둔다
 CONF = float(os.environ.get("DET_CONF", "0.25"))
+SCHEMA_VERSION = "0.2"
 
 
 def main():
@@ -21,6 +24,7 @@ def main():
     WEIGHTS = sys.argv[1] if len(sys.argv) > 1 else "runs/smoke/weights/best.pt"
     SRC = sys.argv[2] if len(sys.argv) > 2 else "data/pilot"
     OUT = sys.argv[3] if len(sys.argv) > 3 else "results/detections"
+    VIDEO_ID = os.environ.get("VIDEO_ID", "V0000")
     os.makedirs(OUT, exist_ok=True)
 
     files = sorted(f for f in os.listdir(SRC)
@@ -30,6 +34,9 @@ def main():
     print(f"이미지 {len(files)}장")
 
     model = YOLO(WEIGHTS)
+    if len(model.names) > 1:
+        print(f"  주의: 가중치의 클래스가 {len(model.names)}개다 {model.names}. "
+              f"스키마는 한 종류이므로 모두 {CLASS_NAME} 으로 낸다.")
     times = []
     for i, name in enumerate(files):
         path = os.path.join(SRC, name)
@@ -49,21 +56,28 @@ def main():
                         for px, py in r.masks.xy[j]]
             area = ((x2 - x1) * (y2 - y1)) if not poly else _poly_area(poly)
             dets.append({
-                "id": f"d{j+1}",
-                "class": CLASSES.get(int(b.cls[0]), str(int(b.cls[0]))),
+                "id": f"{VIDEO_ID}-{i}-{j}",
+                "class": CLASS_NAME,
                 "score": round(float(b.conf[0]), 3),
                 "bbox": [round(x1, 1), round(y1, 1), round(x2 - x1, 1), round(y2 - y1, 1)],
-                "polygon": poly,
+                "polygon": poly or None,
                 "area_px": round(area, 1),
                 "area_ratio": round(area / (w * h), 5),
             })
 
+        # 카메라 값은 드론 메타에서 채운다. 여기서는 자리만 두고 source 를 virtual 로 둔다.
         out = {
+            "schema_version": SCHEMA_VERSION,
+            "video_id": VIDEO_ID,
             "frame_id": i,
-            "time": datetime.now().isoformat(timespec="seconds"),
+            "time": datetime.now(KST).isoformat(timespec="seconds"),
             "image": name,
+            "image_size": {"width": w, "height": h},
             "detections": dets,
-            "camera": {"lat": None, "lon": None, "alt_m": None, "angle_deg": None},
+            "camera": {"lat": None, "lon": None, "alt_m": None, "alt_ref": None,
+                       "heading_deg": None, "pitch_deg": None, "hfov_deg": None,
+                       "source": "virtual"},
+            "latency_ms": {"detect": round(sec * 1000)},
         }
         with open(os.path.join(OUT, os.path.splitext(name)[0] + ".json"),
                   "w", encoding="utf-8") as f:

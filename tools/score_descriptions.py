@@ -16,7 +16,10 @@
 import sys, os, json, csv, re
 from collections import defaultdict
 
-CLASSES = ["흑색연기", "백색및회색연기", "백색 및 회색연기", "연기", "화염", "불꽃", "불길"]
+CLASSES = ["연기", "흑색연기", "백색및회색연기", "백색 및 회색연기", "화염", "불꽃", "불길"]
+# 스키마 v0.2 는 영문으로 둔다. 채점은 한국어 기준이므로 바꿔서 쓴다.
+CLASS_KO = {"smoke": "연기", "fire": "화염"}
+VERDICT_KO = {"confirmed": "확정", "ambiguous": "모호", "undetermined": "미확정"}
 SMOKE = ("연기",)
 RISK_WORDS = ["산림", "임야", "숲", "주거지", "주택", "아파트", "건물", "도로",
               "농경지", "논", "밭", "시설", "학교", "공장"]
@@ -43,8 +46,10 @@ def score_one(fact, desc):
     names = [u["name"] for u in fact.get("land_use", [])]
     top = names[0] if names else None
     radius = fact.get("error_radius_m")
-    verdict = fact.get("verdict")
+    raw_verdict = fact.get("verdict") or fact.get("location_verdict")
+    verdict = VERDICT_KO.get(raw_verdict, raw_verdict)
     truth = fact.get("class", "")
+    truth = CLASS_KO.get(truth, truth)
 
     said_right = truth and truth in desc
     said_wrong = [c for c in CLASSES

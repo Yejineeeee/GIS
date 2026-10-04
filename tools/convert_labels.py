@@ -13,12 +13,14 @@
 import sys, os, json, random, shutil
 from collections import Counter
 
-# 학습에 쓸 클래스. 화염은 제외한다. 연기만 다루기로 했고, 화염은 근거용으로만 센다.
+# 학습에 쓸 클래스. 연기 한 종류로 합친다. 색을 나누지 않는 것은 제안서와
+# docs/schema.md v0.2 가 클래스를 smoke 하나로 두기 때문이다.
+# 화염은 제외한다. 근거를 남기려고 건너뛴 수만 센다.
 KEEP = {
     "흑색연기": 0,
-    "백색및회색연기": 1,
-    "백색 및 회색연기": 1,
-    "백색과 회색연기": 1,
+    "백색및회색연기": 0,
+    "백색 및 회색연기": 0,
+    "백색과 회색연기": 0,
 }
 VAL_RATIO = 0.2
 SEED = 42
@@ -170,7 +172,7 @@ for i, (file_name, lines) in enumerate(pairs):
 
 with open(os.path.join(OUT, "dataset.yaml"), "w", encoding="utf-8") as f:
     f.write(f"path: {os.path.abspath(OUT)}\ntrain: images/train\nval: images/val\n\n"
-            "names:\n  0: 흑색연기\n  1: 백색및회색연기\n")
+            "names:\n  0: smoke\n")
 
 print("\n결과")
 for k, v in stat.most_common():

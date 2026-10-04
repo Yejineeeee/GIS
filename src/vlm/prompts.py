@@ -46,6 +46,11 @@ D = C + """
 
 PROMPTS = {"A": A, "B": B, "C": C, "D": D}
 
+# 스키마 v0.2 는 클래스와 판정을 영문으로 둔다. 프롬프트에는 한국어로 넣는다.
+# 이미 한국어로 들어오면 그대로 쓴다.
+CLASS_KO = {"smoke": "연기", "fire": "화염"}
+VERDICT_KO = {"confirmed": "확정", "ambiguous": "모호", "undetermined": "미확정"}
+
 
 def build(cond, detection=None, alert=None):
     """조건 이름과 JSON을 받아 프롬프트 문자열을 만든다."""
@@ -54,7 +59,7 @@ def build(cond, detection=None, alert=None):
 
     d = (detection or {})["detections"][0]
     values = {
-        "cls": d["class"],
+        "cls": CLASS_KO.get(d["class"], d["class"]),
         "score": d["score"],
         "area_ratio": d["area_ratio"],
         "alt_m": detection["camera"]["alt_m"],
@@ -70,7 +75,7 @@ def build(cond, detection=None, alert=None):
         return C.format(**values)
 
     values.update(
-        verdict=alert["location_verdict"],
+        verdict=VERDICT_KO.get(alert["location_verdict"], alert["location_verdict"]),
         error_radius_m=alert["position"]["error_radius_m"],
         second_name=second["name"],
         second_ratio=second["ratio"],
