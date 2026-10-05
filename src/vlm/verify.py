@@ -16,10 +16,16 @@ def _has_radius(text, radius):
     return bool(re.search(rf"(?<![0-9]){radius}\s*(미터|m(?![a-zA-Z]))", text))
 
 
-def check(description, alert):
-    """지키지 않은 규칙을 목록으로 돌려준다. 빈 목록이면 통과다."""
+def check(description, alert, observed=None):
+    """지키지 않은 규칙을 목록으로 돌려준다. 빈 목록이면 통과다.
+
+    observed 를 주고 연기가 없다고 되어 있으면 판정 규칙을 적용하지 않는다.
+    연기가 없으면 알람이 뜰 상황이 아니므로 위치를 설명할 이유가 없다.
+    """
     if not description:
         return ["설명이 비어 있다"]
+    if observed is not None and not observed.get("smoke_present"):
+        return []
 
     land = alert.get("land_use") or []
     first = land[0]["name"] if land else None
