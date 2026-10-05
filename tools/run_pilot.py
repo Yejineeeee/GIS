@@ -11,7 +11,7 @@ import sys, os, json, time, glob, subprocess
 
 MODELS = {"internvl": "OpenGVLab/InternVL3-2B-hf",
           "qwen": "Qwen/Qwen2.5-VL-3B-Instruct"}
-CONDS = ["A", "B"]
+CONDS = os.environ.get("PILOT_CONDS", "A,B").split(",")
 MAX_PATCHES = 6
 IMAGES = sys.argv[1] if len(sys.argv) > 1 else "data/pilot"
 OUTFILE = sys.argv[2] if len(sys.argv) > 2 else "results/pilot_outputs.jsonl"
@@ -32,6 +32,30 @@ def fake_detection(name, i):
                        "source": "virtual"}}
 
 
+def fake_alert(i):
+    """조건 C와 D 용 알람. 판정 세 가지가 고루 나오게 돌려 가며 만든다.
+    판정이 바뀔 때 설명이 실제로 달라지는지 보려는 것이다."""
+    kind = i % 3
+    if kind == 0:
+        verdict, radius = "확정", 20
+        land = [{"name": "보전녹지지역", "ratio": 0.85},
+                {"name": "제1종일반주거지역", "ratio": 0.15}]
+    elif kind == 1:
+        verdict, radius = "모호", 60
+        land = [{"name": "보전녹지지역", "ratio": 0.52},
+                {"name": "제2종일반주거지역", "ratio": 0.41}]
+    else:
+        verdict, radius = "미확정", 110
+        land = [{"name": "자연녹지지역", "ratio": 0.38},
+                {"name": "제1종일반주거지역", "ratio": 0.33}]
+    return {"alert_id": f"p-{i:04d}", "detection_id": f"P000-{i}-0",
+            "position": {"lat": 37.74652, "lon": 128.88544,
+                         "error_radius_m": radius},
+            "location_verdict": verdict, "land_use": land,
+            "evidence": {"buildings_in_radius": 12, "slope_deg": None},
+            "description": None, "latency_ms": {}}
+
+
 def run_model(key, model_id, files, out):
     import torch
     from PIL import Image
@@ -39,7 +63,6 @@ def run_model(key, model_id, files, out):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "vlm"))
     import prompts as P
 
-    alert = json.load(open("schema/alert.example.json", encoding="utf-8"))
     quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
                                bnb_4bit_compute_dtype=torch.float16,
                                bnb_4bit_use_double_quant=True)
@@ -63,6 +86,7 @@ def run_model(key, model_id, files, out):
         image = Image.open(path).convert("RGB")
         image.thumbnail((1024, 1024))
         det = fake_detection(name, i)
+        alert = fake_alert(i)
         for cond in CONDS:
             msg = [{"role": "user", "content": [
                 {"type": "image", "image": image},
