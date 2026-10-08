@@ -148,7 +148,8 @@ def main():
                   f"{'통과' if not bad else bad}", flush=True)
             print(f"     {desc}", flush=True)
 
-    print(f"\n스키마 준수 {schema_ok}/{len(files)}   판정 준수 {rule_ok}/{len(files)}")
+    print(f"\n스키마 준수 {schema_ok}/{len(files)}   "
+          f"판정 준수 {rule_ok}/{rule_total} (연기 있는 사진만)")
     print(f"→ {OUT}")
 
 
