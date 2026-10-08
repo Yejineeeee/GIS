@@ -5,76 +5,76 @@
     python3 tools/select_71330.py <drone_env.csv> [출력 csv]
 
 기준 (docs/data_select.md 참고)
-- 드론 촬영분만, 실제 발화(PositiveRealDB)의 흑색연기·백색회색연기 270장 + 오탐 유발(NegativeDB) 30장
-- 같은 영상의 프레임이 섞이지 않도록 영상(camera_id + video_id)당 1장만 고른다
-- 시연·평가용으로 남겨둘 지역(모래고개입구, 장현동)은 제외한다
-- 영상 단위로 학습(train) 80% / 검증(val) 20% 로 나눈다
+- 시연 지역(장현동)과 촬영 1위 지역(솔향수목원) 위주로, 흑색연기와 백색회색연기를 섞는다
+- 솔향수목원: 실제 발화 흑색연기 150장, 백색회색연기 120장. 영상(camera_id + video_id)당 1장
+- 장현동: 백색회색연기 30장. 영상이 2개뿐이라 영상 안에서 간격을 두고 여러 장을 고른다
+- 학습(train)과 검증(val)은 영상 단위로 나눠 같은 영상이 양쪽에 섞이지 않게 한다
 - 같은 결과가 나오도록 난수 시드를 고정한다
 """
 import csv, random, sys
 from collections import defaultdict
 
 SEED = 42
-EXCLUDE_PLACES = {"강원도강릉시모래고개입구", "강원도강릉시장현동"}
-PLAN = [  # (DB, 클래스, 장수)
-    ("PositiveRealDB", "흑색연기", 135),
-    ("PositiveRealDB", "백색회색연기", 135),
-    ("NegativeDB", "구름", 10),
-    ("NegativeDB", "안개연무", 10),
-    ("NegativeDB", "굴뚝연기", 10),
-]
+SOLHYANG = "강원도강릉시솔향수목원"
+JANGHYEON = "강원도강릉시장현동"
 VAL_RATIO = 0.2
+# 장현동 영상 2개: 하나는 train, 하나는 val
+JANGHYEON_PLAN = {("BD011025", "003"): ("train", 20), ("BD011003", "002"): ("val", 10)}
+
+
+def cls_of(r):
+    return r["file"].split("_")[1]
+
+
+def db_of(r):
+    return r["file"].split("_")[0]
+
+
+def one_per_video(rows, n, rng):
+    by_vid = defaultdict(list)
+    for r in rows:
+        by_vid[(r["camera_id"], r["video_id"])].append(r)
+    vids = sorted(by_vid)
+    rng.shuffle(vids)
+    if len(vids) < n:
+        sys.exit(f"영상 {len(vids)}개로 {n}장을 고를 수 없음")
+    chosen = [rng.choice(sorted(by_vid[v], key=lambda r: r["file"])) for v in vids[:n]]
+    n_val = round(n * VAL_RATIO)
+    return [(r, "val" if i < n_val else "train") for i, r in enumerate(chosen)]
+
+
+def spaced(frames, n):
+    frames = sorted(frames, key=lambda r: r["file"])
+    step = len(frames) / n
+    return [frames[int(i * step)] for i in range(n)]
 
 
 def main(src, out):
     rng = random.Random(SEED)
     rows = list(csv.DictReader(open(src, encoding="utf-8-sig")))
     picked = []
-    for db, cls, n in PLAN:
-        pool = [r for r in rows
-                if r["file"].split("_")[0] == db and r["file"].split("_")[1] == cls
-                and r["address"] not in EXCLUDE_PLACES]
-        # 장소 -> 영상 -> 프레임
-        by_place = defaultdict(lambda: defaultdict(list))
-        for r in pool:
-            by_place[r["address"]][(r["camera_id"], r["video_id"])].append(r)
-        places = sorted(by_place)
-        for p in places:
-            vids = sorted(by_place[p])
-            rng.shuffle(vids)
-            by_place[p] = {v: by_place[p][v] for v in vids}
-        # 장소를 번갈아 돌며 영상 1개씩 뽑아 장소가 한쪽으로 쏠리지 않게 한다
-        chosen, iters = [], {p: iter(by_place[p].items()) for p in places}
-        while len(chosen) < n and iters:
-            for p in list(iters):
-                try:
-                    _, frames = next(iters[p])
-                except StopIteration:
-                    del iters[p]
-                    continue
-                frames = sorted(frames, key=lambda r: r["file"])
-                chosen.append(rng.choice(frames))
-                if len(chosen) == n:
-                    break
-        if len(chosen) < n:
-            sys.exit(f"{db} {cls}: {n}장이 필요한데 {len(chosen)}장만 가능")
-        rng.shuffle(chosen)
-        n_val = round(n * VAL_RATIO)
-        for i, r in enumerate(chosen):
-            picked.append((r, "val" if i < n_val else "train", db, cls))
+
+    for cls, n in [("흑색연기", 150), ("백색회색연기", 120)]:
+        pool = [r for r in rows if r["address"] == SOLHYANG and cls_of(r) == cls
+                and db_of(r) == "PositiveRealDB"]
+        picked += one_per_video(pool, n, rng)
+
+    jh = [r for r in rows if r["address"] == JANGHYEON and cls_of(r) == "백색회색연기"]
+    for vid, (split, n) in JANGHYEON_PLAN.items():
+        frames = [r for r in jh if (r["camera_id"], r["video_id"]) == vid]
+        picked += [(r, split) for r in spaced(frames, n)]
 
     with open(out, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["label_file", "image_file", "split", "db", "class", "smoke",
-                    "place", "camera_id", "video_id", "gps"])
-        for r, split, db, cls in sorted(picked, key=lambda t: (t[1], t[3], t[0]["file"])):
-            w.writerow([r["file"], r["file"][:-5] + ".jpg", split, db, cls,
-                        1 if db.startswith("Positive") else 0,
-                        r["address"], r["camera_id"], r["video_id"], r["gps"]])
+        w.writerow(["file_name", "class", "place", "split", "db", "camera_id", "video_id",
+                    "image_file", "gps"])
+        for r, split in sorted(picked, key=lambda t: (t[1], t[0]["address"], cls_of(t[0]), t[0]["file"])):
+            w.writerow([r["file"], cls_of(r), r["address"], split, db_of(r),
+                        r["camera_id"], r["video_id"], r["file"][:-5] + ".jpg", r["gps"]])
     print(f"{len(picked)}장 저장 -> {out}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(__doc__)
-    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "data/select_71330.csv")
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "docs/select_71330.csv")
