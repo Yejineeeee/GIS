@@ -1,30 +1,42 @@
 {
+  "schema_version": "0.3",
   "alert_id": "a-0007",
-  "time": "2026-11-10T14:03:22",
-  "detection_id": "d1",
+  "time": "2026-11-10T14:03:22.000+09:00",
+  "detection_id": "V0012-42-0",
   "position": {
     "lat": 37.5118,
     "lon": 127.0405,
-    "error_radius_m": 55
+    "error_radius_m": 55,
+    "virtual": false
   },
   "location_verdict": "모호",
   "land_use": [
-    {
-      "name": "보전산지",
-      "ratio": 0.57
-    },
-    {
-      "name": "제1종일반주거지역",
-      "ratio": 0.33
-    }
+    { "name": "보전산지", "ratio": 0.57 },
+    { "name": "제1종일반주거지역", "ratio": 0.33 },
+    { "name": "도로", "ratio": 0.10 }
   ],
+  "verdict_rule": { "rule": "최다비율", "threshold": 0.70, "samples": 30 },
   "evidence": {
     "buildings_in_radius": 12,
-    "slope_deg": 21
+    "slope_deg": 21,
+    "dem_resolution_m": 90
   },
-  "description": null,
+  "observed": {
+    "smoke_present": true,
+    "smoke_color": "검은색",
+    "spread": "넓음",
+    "flame_visible": false,
+    "terrain": "산림"
+  },
+  "description": "산림과 주거지 경계 부근에서 검은 연기가 넓게 퍼지고 있습니다. 위치 판정은 모호하며, 반경 55m 안에 주거 건물 12동이 있습니다.",
+  "description_method": "구조화템플릿",
   "latency_ms": {
+    "detect": 142,
+    "geo_transform": 3,
+    "geo_query": 210,
+    "verdict": 1,
+    "vlm": 6390,
     "detect_to_alert": 380,
-    "alert_to_description": null
+    "alert_to_description": 6420
   }
 }

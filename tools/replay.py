@@ -1,6 +1,6 @@
 """파이프라인 점검용 입력 생성기.
 
-이미지 폴더를 파일 이름 순서로 읽어, 프레임마다 탐지 결과 JSON(docs/schema.md v0.2)을
+이미지 폴더를 파일 이름 순서로 읽어, 프레임마다 탐지 결과 JSON(docs/schema.md v0.3)을
 1~2초 간격으로 내보낸다. 탐지 값은 가짜지만 형식은 실제 탐지 모델 출력과 같다.
 탐지 모델이 없어도 지리 조회, 알람, 대시보드를 만들고 시험할 수 있게 하는 용도다.
 
@@ -134,7 +134,7 @@ for frame_id, path in enumerate(files):
         area_px = int(abs(area) / 2)
         detections.append({
             "id": f"{args.video_id}-{frame_id}-0",
-            "class": "smoke",
+            "class": "연기",
             "score": round(rng.uniform(0.5, 0.99), 2),
             "bbox": [x, y, bw, bh],
             "polygon": poly,
@@ -143,7 +143,7 @@ for frame_id, path in enumerate(files):
         })
 
     msg = {
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "video_id": args.video_id,
         "frame_id": frame_id,
         "time": (t0 + timedelta(seconds=args.interval * frame_id)).isoformat(timespec="milliseconds"),
@@ -154,11 +154,11 @@ for frame_id, path in enumerate(files):
             "lat": round(lat, 7),
             "lon": round(lon, 7),
             "alt_m": args.alt,
-            "alt_ref": "AGL",
+            "alt_ref": "지면",
             "heading_deg": args.heading,
             "pitch_deg": args.pitch,
             "hfov_deg": args.hfov,
-            "source": "virtual",
+            "source": "가상",
         },
         "latency_ms": {"detect": round((time.perf_counter() - t_start) * 1000)},
     }
