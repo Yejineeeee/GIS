@@ -18,7 +18,7 @@
   "verdict_rule": { "rule": "최다비율", "threshold": 0.70, "samples": 30 },
   "evidence": {
     "buildings_in_radius": 12,
-    "slope_deg": 21,
+    "terrain_slope_deg": 21,
     "dem_resolution_m": 90
   },
   "observed": {
