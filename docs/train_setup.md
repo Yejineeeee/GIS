@@ -3,7 +3,7 @@
 7주차와 8주차에 잡혀 있는 학습을 시험 기간에 시작하게 되므로, 실제 데이터가 오기
 전에 학습이 끝까지 도달하는지 먼저 확인했다. 성능을 본 것이 아니라 경로를 본 것이다.
 
-담당: 이예진 / 상태: 점검 완료, 실제 데이터 대기
+담당: 이예진 / 상태: 점검 완료. 실제 데이터로 돌린 결과는 `docs/train_results.md`
 
 ## 확인한 것
 
@@ -60,11 +60,22 @@ ultralytics에는 전역 설정 `runs_dir`이 있다. 기본값이
 뜨기 전에 빈 이미지로 한 번 돌려 모델을 데워야 한다. 현장 기기 동작 시간을 잴 때
 첫 장을 넣으면 숫자가 크게 틀어진다.
 
-## 실제 학습 시간 예상
+### 데이터 로더 워커
 
-가짜 데이터 기준으로 장당 에폭당 0.0046분이었다. 300장에 100에폭이면 약 2시간
-20분이다. 실제 이미지는 해상도가 크므로 더 걸린다. 노트북에서 돌려도 되는 규모이나,
-여러 번 돌려 볼 것이므로 Colab을 같이 쓴다.
+`workers=0`으로 두면 메인 스레드가 혼자 사진을 읽는다. mosaic 증강이 샘플 하나에
+사진 4장을 읽으므로 GPU가 데이터를 기다리며 논다. 중단했을 때 `cv2.imdecode` 안에서
+멈춰 있는 것으로 나타난다.
+
+위의 main 가드가 있으면 워커를 1 이상으로 써도 안전하다. 640px 240장 기준으로
+에폭당 56초에서 5.7초로 줄었다. `train_seg.py`의 다섯 번째 인자이고 기본값은 4다.
+
+## 실제 학습 시간
+
+가짜 데이터로 예상할 때는 300장 100에폭에 약 2시간 20분으로 보고 Colab을 같이 쓸
+생각이었다. 실제로는 워커를 늘린 뒤 1,260장 960px 100에폭이 62분이었다. 노트북에서
+돌리면 되고 Colab은 쓰지 않는다.
+
+측정값은 `docs/train_results.md`에 있다.
 
 ## 쓰는 법
 
@@ -72,7 +83,8 @@ ultralytics에는 전역 설정 `runs_dir`이 있다. 기본값이
 python tools/make_fake_dataset.py data/fake 40          가짜 데이터
 python tools/convert_labels.py --inspect "라벨 폴더"     실제 라벨 구조 확인
 python tools/convert_labels.py "라벨 폴더" data/yolo     실제 라벨 변환
-python tools/train_seg.py data/yolo/dataset.yaml 100 640 16
+python tools/place_images.py 원본이미지폴더 data/yolo    사진 배치와 배경 추가
+python tools/train_seg.py data/yolo/dataset.yaml 100 960 8 4
 python tools/predict_seg.py runs/smoke/weights/best.pt data/pilot
 ```
 
