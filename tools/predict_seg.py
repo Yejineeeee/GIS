@@ -14,7 +14,11 @@ from datetime import datetime, timezone, timedelta
 KST = timezone(timedelta(hours=9))
 
 CLASS_NAME = "연기"       # 스키마 v0.2 는 클래스를 한 종류로 둔다
-CONF = float(os.environ.get("DET_CONF", "0.25"))
+# 탐지 문턱. 0.25 가 아니라 0.10 이다. 재난 상황에서는 놓치는 쪽이 헛걸음보다
+# 나쁘고, 헛탐지는 뒤의 지리 결합과 사람 확인으로 거를 수 있다. 0.25 에서 0.10 으로
+# 내리면 작은 연기 탐지율이 77%에서 96%로 오르고, 늘어나는 헛탐지는 굴뚝연기와
+# 안개연무뿐이다. 구름 26장은 한 장도 틀리지 않는다. docs/train_results.md 참고.
+CONF = float(os.environ.get("DET_CONF", "0.10"))
 SCHEMA_VERSION = "0.2"
 
 
