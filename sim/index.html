@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>드론 시뮬레이터</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.124.0/Build/Cesium/Widgets/widgets.css">
+<style>
+  html, body { margin:0; height:100%; background:#111; color:#eee;
+               font-family:"Malgun Gothic", sans-serif; overflow:hidden; }
+  #map { position:absolute; inset:0; }
+  .box { position:absolute; z-index:10; background:rgba(16,16,16,.9);
+         border:1px solid #333; border-radius:8px; padding:11px 13px; font-size:13px; }
+  #panel { left:12px; top:12px; width:300px; }
+  #hud { right:12px; top:12px; width:260px; font-family:Consolas, monospace;
+         font-size:12px; color:#9ad; white-space:pre; }
+  h1 { font-size:14px; margin:0 0 8px; }
+  button { background:#2b6; border:0; color:#042; font-weight:700;
+           padding:6px 11px; border-radius:6px; cursor:pointer; font-size:12px;
+           margin:2px 2px 0 0; }
+  button.off { background:#444; color:#bbb; }
+  .hint { color:#999; font-size:12px; line-height:1.5; }
+  kbd { background:#2a2a2a; border:1px solid #444; border-radius:3px;
+        padding:0 4px; font-size:11px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="panel" class="box">
+  <h1>드론 시뮬레이터 — 모래고개입구</h1>
+  <div class="hint">
+    <kbd>W</kbd><kbd>S</kbd> 앞뒤 &nbsp; <kbd>A</kbd><kbd>D</kbd> 좌우 &nbsp;
+    <kbd>Q</kbd><kbd>E</kbd> 위아래<br>
+    <kbd>←</kbd><kbd>→</kbd> 기수 &nbsp; <kbd>↑</kbd><kbd>↓</kbd> 카메라 각도
+  </div>
+  <div style="margin-top:9px">
+    <button id="fly">자동 비행</button>
+    <button id="smoke">연기 켜기</button>
+    <button id="grab">프레임 뽑기</button>
+  </div>
+  <div class="hint" id="note" style="margin-top:8px">준비 중</div>
+</div>
+
+<div id="hud" class="box">기다리는 중</div>
+
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.124.0/Build/Cesium/Cesium.js"></script>
+<script src="token.js" onerror="void 0"></script>
+<script>
+const SITE = { lon: 128.906239, lat: 37.736790 };     // 모래고개입구
+// 연기를 피울 자리. 이 좌표가 정답이다. 탐지가 낸 좌표와 비교한다.
+const FIRE = { lon: 128.9089, lat: 37.7331 };
+const TOKEN = (window.CESIUM_ION_TOKEN || "").trim();
+
+let viewer, smokeEntity = null, flying = false, aglOffset = 120;
+
+async function boot() {
+  let terrain, baseLayer, note;
+  if (TOKEN) {
+    Cesium.Ion.defaultAccessToken = TOKEN;
+    try {
+      terrain = await Cesium.createWorldTerrainAsync();
+      baseLayer = Cesium.ImageryLayer.fromProviderAsync(Cesium.createWorldImageryAsync());
+      note = "실제 고도 + 위성 영상";
+    } catch (e) { note = "토큰 오류: " + e.message; }
+  }
+  if (!baseLayer) {
+    baseLayer = Cesium.ImageryLayer.fromProviderAsync(
+      Promise.resolve(new Cesium.OpenStreetMapImageryProvider({
+        url: "https://tile.openstreetmap.org/" })));
+    note = note || "토큰 없음. 평평한 지형과 지도 타일";
+  }
+
+  viewer = new Cesium.Viewer("map", {
+    baseLayer, terrainProvider: terrain,
+    baseLayerPicker:false, geocoder:false, homeButton:false, sceneModePicker:false,
+    navigationHelpButton:false, timeline:false, animation:false, infoBox:false,
+    selectionIndicator:false, fullscreenButton:false,
+  });
+  window.__viewer = viewer;
+  viewer.scene.globe.depthTestAgainstTerrain = true;   // 연기가 산에 가리게
+  document.getElementById("note").textContent = note;
+
+  // 발화 지점 남쪽 상공에서 시작한다
+  setDrone(FIRE.lon - 0.0045, FIRE.lat - 0.0040, 120, 40, -18);
+  bindKeys();
+  await settle(40);
+  hud();
+}
+
+// 지면 기준 고도로 드론을 놓는다. 지형 고도를 더해 타원체 높이로 바꾼다.
+function setDrone(lon, lat, agl, headingDeg, pitchDeg) {
+  aglOffset = agl;
+  const ground = groundHeight(lon, lat);
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(lon, lat, (ground ?? 0) + agl),
+    orientation: { heading: Cesium.Math.toRadians(headingDeg),
+                   pitch: Cesium.Math.toRadians(pitchDeg), roll: 0 },
+  });
+}
+
+function groundHeight(lon, lat) {
+  const h = viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(lon, lat));
+  return (h === undefined) ? null : h;
+}
+
+// 창이 뒤에 있으면 렌더가 멈춰 지형 값을 못 읽는다. 읽기 전에 강제로 그린다.
+async function settle(n = 20) {
+  for (let i = 0; i < n; i++) {
+    viewer.scene.render();
+    await new Promise(r => setTimeout(r, 70));
+    const c = Cesium.Cartographic.fromCartesian(viewer.camera.positionWC);
+    if (viewer.scene.globe.tilesLoaded &&
+        viewer.scene.globe.getHeight(c) !== undefined) return true;
+  }
+  return false;
+}
+
+// ---------- 연기 ----------
+function toggleSmoke() {
+  const btn = document.getElementById("smoke");
+  if (smokeEntity) {
+    if (smokeEntity.__ps) viewer.scene.primitives.remove(smokeEntity.__ps);
+    viewer.entities.remove(smokeEntity);
+    smokeEntity = null;
+    btn.textContent = "연기 켜기"; btn.classList.add("off");
+    hud(); return;
+  }
+  const g = groundHeight(FIRE.lon, FIRE.lat) ?? 0;
+  const pos = Cesium.Cartesian3.fromDegrees(FIRE.lon, FIRE.lat, g + 2);
+  smokeEntity = viewer.entities.add({
+    position: pos,
+    ellipsoid: { radii: new Cesium.Cartesian3(1, 1, 1), show: false },
+  });
+  // 연기는 입자로 그린다. 사진을 붙이면 멈춰 있어 실제 같지 않다.
+  //
+  // 처음에 안 보였던 이유가 둘이다. 입자 그림을 캔버스 객체로 넘겼고(데이터
+  // URL 이어야 한다), 시계가 멈춰 있어 입자가 나이를 안 먹었다. 둘 다 고친다.
+  viewer.clock.shouldAnimate = true;
+
+  const base = g + 2;
+  const up = Cesium.Transforms.eastNorthUpToFixedFrame(pos);
+  const rot = Cesium.Matrix4.getMatrix3(up, new Cesium.Matrix3());
+  const ps = new Cesium.ParticleSystem({
+    image: puffDataUrl(),
+    // 아주 옅게 쌓는다. 진하게 하면 흰 풍선처럼 보인다.
+    // 알파 0.12 는 눈으로 보기와 탐지가 둘 다 되는 값이다. 더 옅게 하면
+    // 모델이 연기 대신 밭이나 맨땅을 집는다(알파 0.014 에서 헛탐지 10개).
+    startColor: Cesium.Color.WHITE.withAlpha(0.12),
+    endColor: Cesium.Color.fromCssColorString("#c8c8c8").withAlpha(0.0),
+    // 처음부터 넓게 뿜는다. 작게 시작하면 발화점에 밝은 핵이 생긴다.
+    startScale: 2.0,
+    endScale: 13.0,
+    minimumParticleLife: 11.0,
+    maximumParticleLife: 24.0,
+    minimumSpeed: 3.0,
+    maximumSpeed: 13.0,
+    imageSize: new Cesium.Cartesian2(8, 8),
+    sizeInMeters: true,
+    emissionRate: 240,
+    // 위로 뿜는다. SphereEmitter 를 쓰면 아래로도 나가 공처럼 보인다.
+    emitter: new Cesium.ConeEmitter(Cesium.Math.toRadians(20)),
+    modelMatrix: up,
+    lifetime: Number.MAX_VALUE,
+    // 높이에 따라 바람이 세지고(바람 전단) 옆으로 더 흩어진다.
+    updateCallback: function (p, dt) {
+      const c = Cesium.Cartographic.fromCartesian(p.position);
+      const k = Math.min(Math.max(0, c.height - base) / 80, 1);
+      if (p.__j === undefined) p.__j = [Math.random() - 0.5, Math.random() - 0.5];
+      const wind = 1.2 + 6.5 * k;
+      const spread = 1.0 + 5.0 * k;
+      const d = new Cesium.Cartesian3(
+        (wind * 0.9 + p.__j[0] * spread) * dt,
+        (wind * 0.42 + p.__j[1] * spread) * dt,
+        0);
+      Cesium.Matrix3.multiplyByVector(rot, d, d);
+      Cesium.Cartesian3.add(p.position, d, p.position);
+    },
+  });
+  viewer.scene.primitives.add(ps);
+  smokeEntity.__ps = ps;
+  const btn2 = document.getElementById("smoke");
+  btn2.textContent = "연기 끄기"; btn2.classList.remove("off");
+  hud();
+}
+
+// 입자에 쓸 둥근 연기 점. 캔버스 객체가 아니라 데이터 URL 로 넘긴다.
+function puffDataUrl() {
+  // 매끈한 원은 겹치면 덩어리로 보인다. 얼룩을 넣어 구름 무늬를 만든다.
+  const n = 128, c = document.createElement("canvas");
+  c.width = c.height = n;
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(n, n);
+  const noise = (x, y, f) =>
+    Math.sin(x*f*1.7 + Math.cos(y*f*2.3)*2.1) *
+    Math.cos(y*f*1.3 + Math.sin(x*f*1.9)*1.7);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const dx = (x-n/2)/(n/2), dy = (y-n/2)/(n/2);
+    const r = Math.hypot(dx, dy);
+    let v0 = 0.55*noise(x,y,0.06) + 0.3*noise(x,y,0.13) + 0.15*noise(x,y,0.27);
+    v0 = (v0 + 1) / 2;
+    const fall = Math.max(0, 1 - r);
+    const a = Math.max(0, Math.min(1, fall * fall * (0.35 + 0.65 * v0)));
+    const i = (y*n + x) * 4;
+    img.data[i] = img.data[i+1] = img.data[i+2] = 255;
+    img.data[i+3] = a * 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return c.toDataURL("image/png");
+}
+
+// ---------- 조종 ----------
+const keys = {};
+function bindKeys() {
+  addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
+  addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+  viewer.clock.onTick.addEventListener(() => {
+    if (flying) return;
+    const cam = viewer.camera, step = 6, turn = Cesium.Math.toRadians(1.2);
+    if (keys["w"]) cam.moveForward(step);
+    if (keys["s"]) cam.moveBackward(step);
+    if (keys["a"]) cam.moveLeft(step);
+    if (keys["d"]) cam.moveRight(step);
+    if (keys["q"]) cam.moveUp(step);
+    if (keys["e"]) cam.moveDown(step);
+    if (keys["arrowleft"]) cam.setView({ orientation: {
+      heading: cam.heading - turn, pitch: cam.pitch, roll: 0 } });
+    if (keys["arrowright"]) cam.setView({ orientation: {
+      heading: cam.heading + turn, pitch: cam.pitch, roll: 0 } });
+    if (keys["arrowup"]) cam.setView({ orientation: {
+      heading: cam.heading, pitch: Math.min(cam.pitch + turn, 0), roll: 0 } });
+    if (keys["arrowdown"]) cam.setView({ orientation: {
+      heading: cam.heading, pitch: Math.max(cam.pitch - turn, -Math.PI/2), roll: 0 } });
+    hud();
+  });
+}
+
+// ---------- 자동 비행 ----------
+// 발화 지점을 끼고 도는 경로. 드론이 순찰하다 연기를 발견하는 모양이다.
+async function autoFly() {
+  const btn = document.getElementById("fly");
+  if (flying) { flying = false; btn.textContent = "자동 비행"; return; }
+  flying = true; btn.textContent = "비행 멈춤";
+  const R = 0.0045, STEPS = 720;
+  for (let i = 0; flying && i < STEPS; i++) {
+    const t = i / STEPS * Math.PI * 2;
+    const lon = FIRE.lon + R * Math.cos(t) * 1.25;
+    const lat = FIRE.lat + R * Math.sin(t);
+    const g = groundHeight(lon, lat) ?? 0;
+    // 항상 발화 지점을 바라보게 기수를 돌린다
+    const headTo = Math.atan2(FIRE.lon - lon, FIRE.lat - lat);
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(lon, lat, g + aglOffset),
+      orientation: { heading: headTo, pitch: Cesium.Math.toRadians(-20), roll: 0 },
+    });
+    hud();
+    await new Promise(r => setTimeout(r, 45));
+  }
+  flying = false; btn.textContent = "자동 비행";
+}
+
+// ---------- 값 뽑기 ----------
+function cameraBlock() {
+  const cam = viewer.camera;
+  const c = Cesium.Cartographic.fromCartesian(cam.positionWC);
+  const g = viewer.scene.globe.getHeight(c);
+  return {
+    lat: +Cesium.Math.toDegrees(c.latitude).toFixed(7),
+    lon: +Cesium.Math.toDegrees(c.longitude).toFixed(7),
+    alt_m: (g === undefined) ? null : +(c.height - g).toFixed(1),   // 지면 기준
+    alt_ref: "지면",
+    heading_deg: +((Cesium.Math.toDegrees(cam.heading) % 360 + 360) % 360).toFixed(1),
+    pitch_deg: +Cesium.Math.toDegrees(cam.pitch).toFixed(1),
+    hfov_deg: +Cesium.Math.toDegrees(cam.frustum.fov).toFixed(1),
+    source: "가상",
+  };
+}
+
+function hud() {
+  const c = cameraBlock();
+  const d = smokeEntity ? dist(c.lat, c.lon, FIRE.lat, FIRE.lon) : null;
+  document.getElementById("hud").textContent =
+    `위도    ${c.lat}\n경도    ${c.lon}\n` +
+    `지면고도 ${c.alt_m === null ? "-" : c.alt_m + " m"}\n` +
+    `기수    ${c.heading_deg}도\n카메라각 ${c.pitch_deg}도\n` +
+    `화각    ${c.hfov_deg}도\n` +
+    (d === null ? "\n연기 꺼짐" : `\n발화점까지 ${d.toFixed(0)} m`);
+}
+
+function dist(la1, lo1, la2, lo2) {
+  const R = 6378137, dy = Cesium.Math.toRadians(la2-la1) * R;
+  const dx = Cesium.Math.toRadians(lo2-lo1) * R * Math.cos(Cesium.Math.toRadians(la1));
+  return Math.hypot(dx, dy);
+}
+
+// 프레임 이미지와 카메라 값을 한 벌로 내린다. 파이프라인 입력이 된다.
+async function grabFrame() {
+  await settle(12);
+  viewer.scene.render();
+  const url = viewer.canvas.toDataURL("image/png");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const meta = {
+    schema_version: "0.3", video_id: "SIM", frame_id: Date.now() % 100000,
+    time: new Date().toISOString(),
+    image: `sim_${stamp}.png`,
+    image_size: { width: viewer.canvas.width, height: viewer.canvas.height },
+    detections: [],
+    camera: cameraBlock(),
+    latency_ms: { detect: null },
+    // 정답. 파이프라인이 낸 좌표와 비교하려고 함께 남긴다.
+    truth: smokeEntity ? { fire_lat: FIRE.lat, fire_lon: FIRE.lon } : null,
+  };
+  dl(url, meta.image);
+  dl("data:application/json;charset=utf-8," +
+     encodeURIComponent(JSON.stringify(meta, null, 2)),
+     `sim_${stamp}.json`);
+  window.__last = meta;
+}
+
+function dl(href, name) {
+  const a = document.createElement("a");
+  a.href = href; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+document.getElementById("fly").addEventListener("click", autoFly);
+document.getElementById("smoke").addEventListener("click", toggleSmoke);
+document.getElementById("grab").addEventListener("click", grabFrame);
+boot();
+</script>
+</body>
+</html>

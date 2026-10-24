@@ -28,3 +28,7 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# 시뮬레이터 토큰
+sim/token.js
+sim/frames/
