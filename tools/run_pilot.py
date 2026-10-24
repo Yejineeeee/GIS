@@ -9,6 +9,10 @@
 """
 import sys, os, json, time, glob, subprocess
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "src", "vlm"))
+from fake_alert import fake_alert as base_alert
+
 MODELS = {"internvl": "OpenGVLab/InternVL3-2B-hf",
           "qwen": "Qwen/Qwen2.5-VL-3B-Instruct"}
 CONDS = os.environ.get("PILOT_CONDS", "A,B").split(",")
@@ -34,26 +38,16 @@ def fake_detection(name, i):
 
 def fake_alert(i):
     """조건 C와 D 용 알람. 판정 세 가지가 고루 나오게 돌려 가며 만든다.
-    판정이 바뀔 때 설명이 실제로 달라지는지 보려는 것이다."""
-    kind = i % 3
-    if kind == 0:
-        verdict, radius = "확정", 20
-        land = [{"name": "보전녹지지역", "ratio": 0.85},
-                {"name": "제1종일반주거지역", "ratio": 0.15}]
-    elif kind == 1:
-        verdict, radius = "모호", 60
-        land = [{"name": "보전녹지지역", "ratio": 0.52},
-                {"name": "제2종일반주거지역", "ratio": 0.41}]
-    else:
-        verdict, radius = "미확정", 110
-        land = [{"name": "자연녹지지역", "ratio": 0.38},
-                {"name": "제1종일반주거지역", "ratio": 0.33}]
-    return {"alert_id": f"p-{i:04d}", "detection_id": f"P000-{i}-0",
-            "position": {"lat": 37.74652, "lon": 128.88544,
-                         "error_radius_m": radius},
-            "location_verdict": verdict, "land_use": land,
-            "evidence": {"buildings_in_radius": 12, "slope_deg": None},
-            "description": None, "latency_ms": {}}
+    판정이 바뀔 때 설명이 실제로 달라지는지 보려는 것이다.
+
+    용도 이름은 src/vlm/fake_alert.py 한 곳에서 가져온다. 프롬프트 예시와 겹치지
+    않아야 출력에 그 이름이 나왔을 때 입력을 쓴 것인지 예시를 베낀 것인지 가려진다.
+    """
+    a = base_alert(i)
+    a["detection_id"] = f"P000-{i}-0"
+    a["evidence"]["slope_deg"] = None
+    a["latency_ms"] = {}
+    return a
 
 
 def run_model(key, model_id, files, out):

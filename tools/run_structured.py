@@ -34,24 +34,7 @@ flame_visible  불꽃이 보이는가
 terrain        주로 보이는 지형"""
 
 
-def fake_alert(i):
-    kind = i % 3
-    if kind == 0:
-        verdict, radius = "확정", 20
-        land = [{"name": "보전녹지지역", "ratio": 0.85},
-                {"name": "제1종일반주거지역", "ratio": 0.15}]
-    elif kind == 1:
-        verdict, radius = "모호", 60
-        land = [{"name": "보전녹지지역", "ratio": 0.52},
-                {"name": "제2종일반주거지역", "ratio": 0.41}]
-    else:
-        verdict, radius = "미확정", 110
-        land = [{"name": "자연녹지지역", "ratio": 0.38},
-                {"name": "제1종일반주거지역", "ratio": 0.33}]
-    return {"alert_id": f"p-{i:04d}", "location_verdict": verdict,
-            "position": {"lat": 37.74652, "lon": 128.88544, "error_radius_m": radius},
-            "land_use": land, "evidence": {"buildings_in_radius": 12},
-            "description": None}
+
 
 
 def build_tokenizer_data(tokenizer):
@@ -78,6 +61,7 @@ def main():
     from lmformatenforcer import TokenEnforcer, JsonSchemaParser
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "vlm"))
     import templates, verify
+    from fake_alert import fake_alert
 
     files = (sorted(glob.glob(os.path.join(SRC, "smoke_*.jpg"))) +
              sorted(glob.glob(os.path.join(SRC, "nosmoke_*.jpg"))))

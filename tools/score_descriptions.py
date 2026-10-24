@@ -254,7 +254,7 @@ def main():
             observed = o.get("observed") if isinstance(o.get("observed"), dict) else None
             desc = desc_of(o)
             base = {"image": o["image"], "model": o.get("model", ""),
-                    "cond": o.get("cond", ""), "방식": o.get("method", "프롬프트만"),
+                    "cond": o.get("cond", ""), "방식": o.get("method", "프롬프트"),
                     "VLM.형식준수": int(desc is not None),
                     "VLM.스키마준수": ("" if "schema_ok" not in o
                                    else int(bool(o["schema_ok"]))),
@@ -282,10 +282,10 @@ def main():
     # 정보량 비교는 방식 (i) 로 네 조건을 본다.
     by_cond = defaultdict(list)
     for r in rows:
-        if r["방식"] == "프롬프트만":
+        if r["방식"] == "프롬프트":
             by_cond[r["cond"]].append(r)
     if by_cond:
-        table("정보량 비교 (방식 i 프롬프트만)", by_cond)
+        table("정보량 비교 (방식 i 프롬프트)", by_cond)
 
     # 생성 방식 비교는 조건 D 로 세 방식을 본다.
     by_method = defaultdict(list)
