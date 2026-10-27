@@ -323,6 +323,65 @@ function dl(href, name) {
   document.body.appendChild(a); a.click(); a.remove();
 }
 
+// ---------- 거리별 프레임 뽑기 ----------
+// 시연에 쓸 거리와 고도를 정하려고 만들었다. 콘솔에서 이렇게 쓴다.
+//
+//     await sweep([150, 250, 350, 500], 120)
+//
+// 프레임은 tools/sim_server.py 로 띄웠을 때만 저장된다(POST /frame). 저장한 뒤
+// tools/detect_range.py 로 어느 거리까지 잡히는지 잰다.
+//
+// 연기를 켜고 1분 넘게 지난 뒤에 돌려야 한다. 입자가 쌓이는 동안 기둥이 계속
+// 커지므로, 덜 자란 상태에서 재면 거리 탓으로 잘못 읽게 된다.
+async function shot(D, h, bearing) {
+  bearing = (bearing === undefined) ? 225 : bearing;   // 드론이 발화점의 어느 쪽에 있나
+  const B = Cesium.Math.toRadians(bearing);
+  const lat = FIRE.lat + (D * Math.cos(B)) / 111320;
+  const lon = FIRE.lon + (D * Math.sin(B)) / (111320 * Math.cos(Cesium.Math.toRadians(lat)));
+  const heading = (bearing + 180) % 360;               // 발화점을 바라본다
+
+  // 지형 높이를 읽으려면 그 자리의 타일이 먼저 떠야 한다
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1200),
+    orientation: { heading: Cesium.Math.toRadians(heading),
+                   pitch: Cesium.Math.toRadians(-45), roll: 0 } });
+  await settle(20);
+  const g = groundHeight(lon, lat);
+  if (g === null) return { ok: false, why: "지형 높이를 못 읽음" };
+
+  const pitch = -Math.atan2(h, D) * 180 / Math.PI;     // 발화점이 화면 가운데 오게
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(lon, lat, g + h),
+    orientation: { heading: Cesium.Math.toRadians(heading),
+                   pitch: Cesium.Math.toRadians(pitch), roll: 0 } });
+  await settle(20);
+  for (let i = 0; i < 8; i++) {
+    viewer.scene.render();
+    await new Promise(r => setTimeout(r, 60));
+  }
+
+  const meta = {
+    schema_version: "0.3", video_id: "SWEEP", frame_id: Date.now() % 100000,
+    time: new Date().toISOString(),
+    image_size: { width: viewer.canvas.width, height: viewer.canvas.height },
+    camera: cameraBlock(), detections: [],
+    truth: { fire_lat: FIRE.lat, fire_lon: FIRE.lon },
+    sweep: { D: D, h: h, bearing: bearing, ground_m: +g.toFixed(1) },
+  };
+  const res = await fetch("/frame", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ png: viewer.canvas.toDataURL("image/png"), meta: meta }) });
+  return { ok: true, saved: (await res.json()).saved, D: D, h: h };
+}
+
+async function sweep(dists, h, bearing) {
+  if (!smokeEntity) return "연기를 먼저 켠다";
+  const out = [];
+  for (const D of dists) out.push(await shot(D, h === undefined ? 120 : h, bearing));
+  return out;
+}
+window.sweep = sweep;
+
 document.getElementById("fly").addEventListener("click", autoFly);
 document.getElementById("smoke").addEventListener("click", toggleSmoke);
 document.getElementById("grab").addEventListener("click", grabFrame);
