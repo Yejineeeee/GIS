@@ -248,6 +248,7 @@ def write_doc(facts):
     L = []
     L.append("# 평가셋 100장 (WBS 6.1)\n")
     L.append("설명 품질(6.2)과 오차 반경별 판정(6.5)을 잴 때 쓰는 평가셋과, 사진마다 정답이 되는 사실 목록이다.\n")
+    L.append("담당: 이수진 / 상태: 100장과 사실 목록 생성 완료, 채점기 이름 맞춤은 예진 확인 전\n")
     L.append("## 만드는 법\n")
     L.append("```\npython3 tools/make_eval_set.py <VL.zip> <landuse_5179.geojson> <buildings_5179.geojson> \\\n"
              "    <37808.img> <37804.img>\n```\n")
