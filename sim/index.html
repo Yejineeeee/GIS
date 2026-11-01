@@ -76,6 +76,9 @@ async function boot() {
     baseLayerPicker:false, geocoder:false, homeButton:false, sceneModePicker:false,
     navigationHelpButton:false, timeline:false, animation:false, infoBox:false,
     selectionIndicator:false, fullscreenButton:false,
+    // 이것이 꺼져 있으면 그림을 화면에 올린 뒤 캔버스 버퍼가 비워진다. 그 뒤에
+    // toDataURL 로 읽으면 검은 판이 나온다. 프레임을 저장하므로 켜 둔다.
+    contextOptions: { webgl: { preserveDrawingBuffer: true } },
   });
   window.__viewer = viewer;
   viewer.scene.globe.depthTestAgainstTerrain = true;   // 연기가 산에 가리게
@@ -333,12 +336,13 @@ function dl(href, name) {
 //
 // 연기를 켜고 1분 넘게 지난 뒤에 돌려야 한다. 입자가 쌓이는 동안 기둥이 계속
 // 커지므로, 덜 자란 상태에서 재면 거리 탓으로 잘못 읽게 된다.
-async function shot(D, h, bearing) {
-  bearing = (bearing === undefined) ? 225 : bearing;   // 드론이 발화점의 어느 쪽에 있나
+async function shot(D, h, bearing, target) {
+  bearing = (bearing === undefined) ? 225 : bearing;   // 드론이 겨냥 지점의 어느 쪽에 있나
+  const T = target || FIRE;                            // 기본은 발화점
   const B = Cesium.Math.toRadians(bearing);
-  const lat = FIRE.lat + (D * Math.cos(B)) / 111320;
-  const lon = FIRE.lon + (D * Math.sin(B)) / (111320 * Math.cos(Cesium.Math.toRadians(lat)));
-  const heading = (bearing + 180) % 360;               // 발화점을 바라본다
+  const lat = T.lat + (D * Math.cos(B)) / 111320;
+  const lon = T.lon + (D * Math.sin(B)) / (111320 * Math.cos(Cesium.Math.toRadians(lat)));
+  const heading = (bearing + 180) % 360;               // 겨냥 지점을 바라본다
 
   // 지형 높이를 읽으려면 그 자리의 타일이 먼저 떠야 한다
   viewer.camera.setView({
@@ -360,18 +364,25 @@ async function shot(D, h, bearing) {
     await new Promise(r => setTimeout(r, 60));
   }
 
+  // 마지막 한 장은 기다리지 않고 그린 자리에서 바로 읽는다. 사이에 await 가
+  // 끼면 캔버스 버퍼를 잃을 수 있다.
+  viewer.scene.render();
+  const png = viewer.canvas.toDataURL("image/png");
+
   const meta = {
     schema_version: "0.3", video_id: "SWEEP", frame_id: Date.now() % 100000,
     time: new Date().toISOString(),
     image_size: { width: viewer.canvas.width, height: viewer.canvas.height },
     camera: cameraBlock(), detections: [],
-    truth: { fire_lat: FIRE.lat, fire_lon: FIRE.lon },
+    truth: { fire_lat: T.lat, fire_lon: T.lon },
     sweep: { D: D, h: h, bearing: bearing, ground_m: +g.toFixed(1) },
   };
+  if (target) meta.scene = { id: target.id || null, lat: T.lat, lon: T.lon };
   const res = await fetch("/frame", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ png: viewer.canvas.toDataURL("image/png"), meta: meta }) });
-  return { ok: true, saved: (await res.json()).saved, D: D, h: h };
+    body: JSON.stringify({ png: png, meta: meta }) });
+  return { ok: true, saved: (await res.json()).saved, D: D, h: h,
+           id: target ? (target.id || null) : null };
 }
 
 async function sweep(dists, h, bearing) {
@@ -381,6 +392,18 @@ async function sweep(dists, h, bearing) {
   return out;
 }
 window.sweep = sweep;
+
+// 지정한 지점들을 차례로 찍는다. 연기를 켜지 않고 땅만 담는다.
+// VLM 이 화면에서 건물과 지형을 읽어내는지 보려고 쓴다.
+async function scenes(points, D, h, bearing) {
+  const out = [];
+  for (const p of points) {
+    out.push(await shot(D === undefined ? 300 : D, h === undefined ? 120 : h,
+                        bearing, { lat: p.lat, lon: p.lon, id: p.id }));
+  }
+  return out;
+}
+window.scenes = scenes;
 
 document.getElementById("fly").addEventListener("click", autoFly);
 document.getElementById("smoke").addEventListener("click", toggleSmoke);
