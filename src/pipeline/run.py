@@ -4,22 +4,28 @@
 탐지 결과 JSON → 좌표 변환(3.3) → 지리 조회(3.4) → 임시 판정 → 알람 발행
 → VLM 사실 추출 → 템플릿 문장 → 같은 알람 번호로 설명을 덧붙여 다시 발행
 
-    # 1) 탐지 결과 만들기 (둘 중 하나)
-    python tools/predict_seg.py 가중치.pt 이미지폴더 results/detections
-    python tools/replay.py --images 이미지폴더 --out results/replay --no-sleep
+    # 방법 1) 사진을 넣고 탐지부터 한 번에 (가중치 필요)
+    python src/pipeline/run.py --frames 사진폴더 --weights best.pt \
+        --geo-dir data/geo_moraegogae --vlm fake
 
-    # 2) 파이프라인 실행
-    python src/pipeline/run.py --detections results/detections --frames 이미지폴더 \
+    # 방법 2) 미리 만든 탐지 결과 JSON을 넣기
+    python tools/replay.py --images 사진폴더 --out results/replay --no-sleep \
+        --lat 37.73679 --lon 128.906239
+    python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
         --geo-dir data/geo_moraegogae --vlm fake
 
 입력
-    --detections  탐지 결과 JSON 폴더 (docs/schema.md 탐지 형식)
-    --frames      사진 폴더. 탐지 JSON의 image 가 파일 이름만 있을 때 여기서 찾는다
+    --weights     분할 모델 가중치. 주면 --frames 의 사진을 직접 탐지한다(detect.py).
+                  사진 옆에 같은 이름의 JSON(시뮬레이터 프레임)이 있으면 그 카메라 값을 쓰고,
+                  truth(정답 좌표)가 있으면 알람 위치가 정답에서 몇 m 떨어졌는지 함께 낸다
+    --detections  탐지 결과 JSON 폴더 (docs/schema.md 탐지 형식). --weights 대신 쓴다
+    --frames      사진 폴더
     --geo-dir     landuse_5179.geojson, buildings_5179.geojson, *.img(DEM) 가 있는 폴더
                   (따로 줄 때는 --landuse, --buildings, --dem)
     --vlm         none(설명 없음) / fake(고정값, 연결 확인용) / qwen(실제 모델)
 
 출력 (--out, 기본 results/pipeline)
+    detections/              (--weights 일 때) 프레임별 탐지 결과 JSON
     alerts/<alert_id>.json   알람의 최신 상태. 대시보드가 읽는 곳
     alerts.jsonl             발행 기록. 설명 전 알람과 설명 후 알람이 차례로 쌓인다
     debug.jsonl              형식에 없는 중간 값(대표 픽셀, 가정값, 조회 지점 수, 규칙 위반 등)
@@ -118,8 +124,9 @@ class Publisher:
 
 def main():
     ap = argparse.ArgumentParser(description="전체 파이프라인 첫 연결 (WBS 5.2)")
-    ap.add_argument("--detections", required=True, help="탐지 결과 JSON 폴더")
-    ap.add_argument("--frames", help="사진 폴더 (VLM에 넣을 사진을 찾을 때)")
+    ap.add_argument("--detections", help="탐지 결과 JSON 폴더 (--weights 대신)")
+    ap.add_argument("--weights", help="분할 모델 가중치(best.pt). 주면 --frames 사진을 직접 탐지")
+    ap.add_argument("--frames", help="사진 폴더")
     ap.add_argument("--geo-dir", default="data/geo_moraegogae")
     ap.add_argument("--landuse", help="landuse_5179.geojson (기본: geo-dir 안)")
     ap.add_argument("--buildings", help="buildings_5179.geojson (기본: geo-dir 안, 없으면 건너뜀)")
@@ -151,19 +158,49 @@ def main():
     if a.vlm == "fake":
         print("[주의] VLM fake: 고정된 사실을 넣는다. 연결 확인용이며 결과로 쓰지 않는다")
 
-    frames = load_frames(a.detections)
-    if not frames:
-        sys.exit(f"탐지 결과 JSON이 없다: {a.detections}")
     pub = Publisher(a.out)
-    print(f"[시작] 프레임 {len(frames)}개 → {a.out}\n")
+    if a.weights:
+        if not a.frames:
+            sys.exit("--weights 를 쓰면 --frames 사진 폴더가 필요하다")
+        from detect import Detector
+        t = time.perf_counter()
+        detector = Detector(a.weights)
+        print(f"[준비] 탐지 모델 {ms(t)}ms (imgsz {detector.imgsz}, conf {detector.conf})")
+        images = sorted(p for p in Path(a.frames).iterdir()
+                        if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
+        if not images:
+            sys.exit(f"사진이 없다: {a.frames}")
+        (Path(a.out) / "detections").mkdir(parents=True, exist_ok=True)
+
+        def source():
+            for i, img in enumerate(images):
+                frame, truth = detector.run(img, i)
+                with open(Path(a.out) / "detections" / f"{img.stem}.json", "w", encoding="utf-8") as f:
+                    json.dump(frame, f, ensure_ascii=False, indent=2)
+                yield frame, truth
+        n_frames = len(images)
+    elif a.detections:
+        frames = load_frames(a.detections)
+        if not frames:
+            sys.exit(f"탐지 결과 JSON이 없다: {a.detections}")
+
+        def source():
+            for fr in frames:
+                yield fr, None
+        n_frames = len(frames)
+    else:
+        sys.exit("--weights(+ --frames) 나 --detections 중 하나가 필요하다")
+    print(f"[시작] 프레임 {n_frames}개 → {a.out}\n")
 
     events = []          # 이미 낸 알람: (lat, lon, radius, alert_id)
     stats = {"frames": 0, "detections": 0, "alerts": 0, "merged": 0, "fail": 0,
-             "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "lat": []}
+             "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "lat": [], "truth_err": []}
 
     # ---------- 프레임마다 ----------
-    for frame in frames:
+    for frame, truth in source():
         stats["frames"] += 1
+        if not frame.get("detections"):
+            print(f"  프레임 {frame.get('frame_id')}: 탐지 없음 ({frame['latency_ms']['detect']}ms)")
         t_frame = time.perf_counter()
         det_ms = (frame.get("latency_ms") or {}).get("detect") or 0
         for det in frame.get("detections") or []:
@@ -179,6 +216,10 @@ def main():
                 print(f"  {det.get('id')}: 좌표 변환 실패 - {e}")
                 continue
             t_tr = ms(t)
+            err = None
+            if truth:
+                err = round(dist_m(position["lat"], position["lon"],
+                                   truth["fire_lat"], truth["fire_lon"]), 1)
 
             # 같은 사건이면 알람을 새로 내지 않는다
             if not a.no_merge:
@@ -187,7 +228,10 @@ def main():
                              <= max(ev[2], position["error_radius_m"])), None)
                 if same:
                     stats["merged"] += 1
-                    pub.note(detection_id=det.get("id"), stage="묶음", alert_id=same[3])
+                    pub.note(detection_id=det.get("id"), stage="묶음", alert_id=same[3],
+                             truth_error_m=err)
+                    if err is not None:
+                        print(f"  {det.get('id')}: {same[3]}과 같은 사건으로 묶음 (정답과 {err}m)")
                     continue
 
             # 3.4 지리 조회
@@ -230,10 +274,14 @@ def main():
             stats["verdict"][verdict] += 1
             print(f"  {alert_id} [{verdict}] {det.get('id')}  반경 {position['error_radius_m']}m  "
                   f"1순위 {land_use[0]['name'] + ' ' + str(land_use[0]['ratio']) if land_use else '-'}  "
-                  f"알람까지 {alert['latency_ms']['detect_to_alert']}ms")
+                  f"알람까지 {alert['latency_ms']['detect_to_alert']}ms"
+                  + (f"  정답과 {err}m" if err is not None else ""))
+            if err is not None:
+                stats["truth_err"].append((alert_id, err, position["error_radius_m"]))
 
             # VLM → 템플릿 → 같은 알람으로 다시 발행
-            note = {"alert_id": alert_id, "transform": tinfo, "query": qinfo}
+            note = {"alert_id": alert_id, "transform": tinfo, "query": qinfo,
+                    "truth_error_m": err, "score": det.get("score")}
             if a.vlm != "none":
                 img = find_image(frame, a.frames)
                 if img is None and a.vlm == "qwen":
@@ -273,6 +321,8 @@ def main():
             vals = sorted(x[k] for x in stats["lat"] if x[k] is not None)
             if vals:
                 print(f"  {k}: 중앙값 {vals[len(vals) // 2]}ms (최대 {vals[-1]}ms)")
+    for aid, err, rad in stats["truth_err"]:
+        print(f"  {aid}: 정답과 {err}m, 오차 반경 {rad}m → {'반경 안' if err <= rad else '반경 밖'}")
     print(f"  결과: {a.out}/alerts/, {a.out}/alerts.jsonl, {a.out}/debug.jsonl")
 
     files = sorted(glob.glob(str(Path(a.out) / "alerts" / "*.json")))
