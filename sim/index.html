@@ -38,6 +38,7 @@
     <button id="fly">자동 비행</button>
     <button id="smoke">연기 켜기</button>
     <button id="grab">프레임 뽑기</button>
+    <button id="bld" class="off">건물 켜기</button>
   </div>
   <div class="hint" id="note" style="margin-top:8px">준비 중</div>
 </div>
@@ -53,6 +54,7 @@ const FIRE = { lon: 128.9089, lat: 37.7331 };
 const TOKEN = (window.CESIUM_ION_TOKEN || "").trim();
 
 let viewer, smokeEntity = null, flying = false, aglOffset = 120;
+let buildingsDS = null;
 
 async function boot() {
   let terrain, baseLayer, note;
@@ -117,6 +119,59 @@ async function settle(n = 20) {
         viewer.scene.globe.getHeight(c) !== undefined) return true;
   }
   return false;
+}
+
+// ---------- 건물 ----------
+// V-World LT_C_SPBD 로 받은 건물 바닥면을 층수만큼 세운다. 높이 칸이 없어
+// 층당 3m 로 어림한 값이 height_m 에 들어 있다. 만드는 쪽은
+// tools/make_sim_buildings.py 다.
+//
+// 굴뚝 시연에서 연기를 건물 옥상에 피우므로 받쳐 줄 건물이 필요하다. 없으면
+// 12층 옥상 연기가 지면 36m 공중에 떠 보인다.
+//
+// VLM 의 답은 이것으로 달라지지 않는다. 켜고 끄고 같은 장면을 찍어 같은 질문을
+// 넣어 확인했다(docs/chimney_demo.md).
+async function toggleBuildings() {
+  const btn = document.getElementById("bld");
+  if (buildingsDS) {
+    viewer.dataSources.remove(buildingsDS, true);
+    buildingsDS = null;
+    btn.textContent = "건물 켜기"; btn.classList.add("off");
+    return;
+  }
+  btn.textContent = "읽는 중"; btn.disabled = true;
+  try {
+    const ds = await Cesium.GeoJsonDataSource.load("buildings.geojson", {
+      clampToGround: false });
+    for (const e of ds.entities.values) {
+      if (!e.polygon) continue;
+      const h = e.properties.height_m.getValue();
+      // 바닥은 지형에 붙이고 거기서 h 만큼 올린다. 이 둘을 따로 주지 않으면
+      // 산 위 건물이 땅에 묻히거나 공중에 뜬다.
+      e.polygon.perPositionHeight = false;
+      e.polygon.height = 0;
+      e.polygon.heightReference = Cesium.HeightReference.CLAMP_TO_GROUND;
+      e.polygon.extrudedHeight = h;
+      e.polygon.extrudedHeightReference =
+        Cesium.HeightReference.RELATIVE_TO_GROUND;
+      e.polygon.material = Cesium.Color.fromCssColorString("#d8d2c6");
+      e.polygon.outline = false;   // 2천 채에 테두리를 그리면 느려진다
+    }
+    viewer.dataSources.add(ds);
+    buildingsDS = ds;
+    btn.textContent = "건물 끄기"; btn.classList.remove("off");
+    document.getElementById("note").textContent +=
+      `  건물 ${ds.entities.values.length.toLocaleString()}채`;
+  } catch (err) {
+    // 파일이 없을 수 있다. 저장소에 올라가지 않으므로 받아 쓰는 사람은
+    // make_sim_buildings.py 를 먼저 돌려야 한다.
+    btn.textContent = "건물 없음";
+    document.getElementById("note").textContent =
+      "buildings.geojson 을 못 읽었다. tools/make_sim_buildings.py 를 먼저 돌린다";
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------- 연기 ----------
@@ -408,6 +463,7 @@ window.scenes = scenes;
 document.getElementById("fly").addEventListener("click", autoFly);
 document.getElementById("smoke").addEventListener("click", toggleSmoke);
 document.getElementById("grab").addEventListener("click", grabFrame);
+document.getElementById("bld").addEventListener("click", toggleBuildings);
 boot();
 </script>
 </body>
