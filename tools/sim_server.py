@@ -15,7 +15,7 @@ import base64
 import json
 import os
 import sys
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8712
@@ -68,11 +68,21 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(out)
 
     def log_message(self, fmt, *args):
-        if "POST" in (args[0] if args else ""):
+        """POST 만 찍는다. 타일 GET 이 많아 그대로 두면 가려진다.
+
+        args[0] 이 요청 줄일 때도 있고 상태 코드일 때도 있다. 404 처럼 코드가
+        들어오면 문자열로 보는 순간 TypeError 가 났고, 그 예외가 응답을 쓰다
+        말고 끊어 브라우저의 fetch 가 영영 안 끝났다. 한 번 그렇게 되면
+        한 줄짜리 서버라 다음 요청도 못 받는다. 문자열로 바꿔서 본다.
+        """
+        first = str(args[0]) if args else ""
+        if "POST" in first:
             super().log_message(fmt, *args)
 
 
 if __name__ == "__main__":
     print(f"{ROOT} 를 http://localhost:{PORT} 로 띄운다")
     print(f"프레임은 {FRAMES} 에 저장한다")
-    HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    # 한 줄짜리 서버면 한 연결이 막힐 때 전체가 선다. 프레임을 받는 중에
+    # 브라우저가 다른 요청을 보내므로 연결마다 따로 받는다.
+    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
