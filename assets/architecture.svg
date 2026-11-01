@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" font-family="'Pretendard','Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2E6BC6"/>
+    </marker>
+    <style>
+      .ln{fill:none;stroke:#2E6BC6;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+      .ic{fill:#fff;stroke:#2E6BC6;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}
+      .scr{fill:#EAF1FB;stroke:#2E6BC6;stroke-width:2}
+      .bx{fill:#fff;stroke:#2E6BC6;stroke-width:2.2}
+      .dbx{fill:#F7FAFE;stroke:#9DB8E3;stroke-width:1.8;stroke-dasharray:8 6}
+      .t{font-size:22px;font-weight:600;fill:#222;text-anchor:middle}
+      .s{font-size:16px;fill:#555;text-anchor:middle}
+      .e{font-size:16px;fill:#2E6BC6;text-anchor:middle}
+      .l{text-anchor:start}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="900" fill="#fff"/>
+  <text x="800" y="70" font-size="40" font-weight="700" fill="#111" text-anchor="middle">처리 흐름</text>
+
+  <!-- 드론 영상 -->
+  <g transform="translate(170,262)">
+    <rect class="ic" x="-20" y="-44" width="40" height="16" rx="3"/>
+    <rect class="ic" x="-52" y="-32" width="104" height="70" rx="9"/>
+    <circle class="ic" cx="0" cy="3" r="22"/>
+    <circle class="scr" cx="0" cy="3" r="11"/>
+    <circle cx="36" cy="-18" r="4" fill="#2E6BC6"/>
+  </g>
+  <text class="t" x="170" y="340">드론 영상</text>
+
+  <!-- 드론 시뮬레이터 -->
+  <rect class="dbx" x="60" y="430" width="220" height="92" rx="12"/>
+  <text class="t" x="170" y="468">드론 시뮬레이터</text>
+  <text class="s" x="170" y="496">CesiumJS, 실제 지형</text>
+  <path class="ln" stroke-dasharray="7 6" d="M170,428 V356" marker-end="url(#arr)"/>
+  <text class="e l" x="182" y="400">정답 좌표를 아는 시험 프레임</text>
+
+  <!-- 연기 분할 -->
+  <path class="ln" d="M232,262 H292" marker-end="url(#arr)"/>
+  <rect class="bx" x="298" y="205" width="270" height="114" rx="10"/>
+  <text class="t" x="433" y="243">연기 분할</text>
+  <text class="s" x="433" y="271">YOLO11n-seg, 입력 960px</text>
+  <text class="s" x="433" y="295">CPU 4코어 82ms</text>
+
+  <!-- 위치 변환 -->
+  <path class="ln" d="M568,262 H662" marker-end="url(#arr)"/>
+  <rect class="bx" x="668" y="205" width="270" height="114" rx="10"/>
+  <text class="t" x="803" y="243">위치 변환</text>
+  <text class="s" x="803" y="271">픽셀 → 위도, 경도</text>
+  <text class="s" x="803" y="295">오차 반경 10~100m</text>
+
+  <!-- 지리 조회와 판정 -->
+  <path class="ln" d="M938,262 H1062" marker-end="url(#arr)"/>
+  <rect class="bx" x="1068" y="198" width="324" height="128" rx="10"/>
+  <text class="t" x="1230" y="238">지리 조회와 3단계 판정</text>
+  <text class="s" x="1230" y="266">반경 안 용도지역, 건물</text>
+  <text class="s" x="1230" y="290">확정, 모호, 미확정</text>
+
+  <!-- V-World -->
+  <g transform="translate(1480,120)">
+    <path class="ic" d="M-48,30 H46 A26,26 0 0 0 40,-21 A38,38 0 0 0 -28,-22 A27,27 0 0 0 -48,30 Z"/>
+  </g>
+  <text class="t" x="1480" y="185">V-World</text>
+  <text class="s" x="1480" y="208">용도지역, 건물, DEM</text>
+  <path class="ln" d="M1430,150 H1300 V192" marker-end="url(#arr)"/>
+
+  <!-- 판정 → VLM -->
+  <path class="ln" d="M1230,326 V610" marker-end="url(#arr)"/>
+  <text class="e l" x="1244" y="470">판정과 오차 반경을 함께 넘김</text>
+
+  <!-- 경량 VLM -->
+  <rect class="bx" x="1068" y="616" width="324" height="128" rx="10"/>
+  <text class="t" x="1230" y="656">경량 VLM</text>
+  <text class="s" x="1230" y="684">Qwen2.5-VL-3B, 4bit nf4</text>
+  <text class="s" x="1230" y="708">영상에서 보이는 사실만 JSON으로</text>
+
+  <!-- 문장 조립 -->
+  <path class="ln" d="M1068,680 H944" marker-end="url(#arr)"/>
+  <rect class="bx" x="668" y="623" width="270" height="114" rx="10"/>
+  <text class="t" x="803" y="661">문장 조립</text>
+  <text class="s" x="803" y="689">판정에 맞는 표현을 규칙이 작성</text>
+  <text class="s" x="803" y="713">판정 준수 15/15</text>
+
+  <!-- 알람과 대시보드 -->
+  <path class="ln" d="M668,680 H526" marker-end="url(#arr)"/>
+  <g transform="translate(420,670)">
+    <rect class="ic" x="-90" y="-60" width="180" height="115" rx="8"/>
+    <rect class="scr" x="-78" y="-49" width="156" height="86" rx="3"/>
+    <path class="ic" d="M-18,55 L-25,82 H25 L18,55"/>
+    <path class="ln" d="M-45,82 H45"/>
+    <path d="M-60,-30 L-20,-40 L10,-14 L-30,10 Z" fill="#CFE3C4" stroke="#2E6BC6" stroke-width="1.5"/>
+    <path d="M10,-14 L50,-36 L64,0 L24,18 Z" fill="#F3D9A4" stroke="#2E6BC6" stroke-width="1.5"/>
+    <circle cx="8" cy="-6" r="16" fill="none" stroke="#E36B6B" stroke-width="2.5" stroke-dasharray="4 3"/>
+    <circle cx="8" cy="-6" r="4" fill="#E36B6B"/>
+  </g>
+  <text class="t" x="420" y="790">알람과 지도 대시보드</text>
+  <text class="s" x="420" y="815">오차 반경과 설명을 함께 표시 (구현 중)</text>
+</svg>
