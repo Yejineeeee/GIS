@@ -38,6 +38,7 @@
     <button id="fly">자동 비행</button>
     <button id="smoke">연기 켜기</button>
     <button id="grab">프레임 뽑기</button>
+    <button id="bld" class="off">건물 켜기</button>
   </div>
   <div class="hint" id="note" style="margin-top:8px">준비 중</div>
 </div>
@@ -53,6 +54,7 @@ const FIRE = { lon: 128.9089, lat: 37.7331 };
 const TOKEN = (window.CESIUM_ION_TOKEN || "").trim();
 
 let viewer, smokeEntity = null, flying = false, aglOffset = 120;
+let buildingsDS = null;
 
 async function boot() {
   let terrain, baseLayer, note;
@@ -119,18 +121,83 @@ async function settle(n = 20) {
   return false;
 }
 
+// ---------- 건물 ----------
+// V-World LT_C_SPBD 로 받은 건물 바닥면을 층수만큼 세운다. 높이 칸이 없어
+// 층당 3m 로 어림한 값이 height_m 에 들어 있다. 만드는 쪽은
+// tools/make_sim_buildings.py 다.
+//
+// 굴뚝 시연에서 연기를 건물 옥상에 피우므로 받쳐 줄 건물이 필요하다. 없으면
+// 12층 옥상 연기가 지면 36m 공중에 떠 보인다.
+//
+// VLM 의 답은 이것으로 달라지지 않는다. 켜고 끄고 같은 장면을 찍어 같은 질문을
+// 넣어 확인했다(docs/chimney_demo.md).
+async function toggleBuildings() {
+  const btn = document.getElementById("bld");
+  if (buildingsDS) {
+    viewer.dataSources.remove(buildingsDS, true);
+    buildingsDS = null;
+    btn.textContent = "건물 켜기"; btn.classList.add("off");
+    return;
+  }
+  btn.textContent = "읽는 중"; btn.disabled = true;
+  try {
+    const ds = await Cesium.GeoJsonDataSource.load("buildings.geojson", {
+      clampToGround: false });
+    for (const e of ds.entities.values) {
+      if (!e.polygon) continue;
+      const h = e.properties.height_m.getValue();
+      // 바닥은 지형에 붙이고 거기서 h 만큼 올린다. 이 둘을 따로 주지 않으면
+      // 산 위 건물이 땅에 묻히거나 공중에 뜬다.
+      e.polygon.perPositionHeight = false;
+      e.polygon.height = 0;
+      e.polygon.heightReference = Cesium.HeightReference.CLAMP_TO_GROUND;
+      e.polygon.extrudedHeight = h;
+      e.polygon.extrudedHeightReference =
+        Cesium.HeightReference.RELATIVE_TO_GROUND;
+      e.polygon.material = Cesium.Color.fromCssColorString("#d8d2c6");
+      e.polygon.outline = false;   // 2천 채에 테두리를 그리면 느려진다
+    }
+    viewer.dataSources.add(ds);
+    buildingsDS = ds;
+    btn.textContent = "건물 끄기"; btn.classList.remove("off");
+    document.getElementById("note").textContent +=
+      `  건물 ${ds.entities.values.length.toLocaleString()}채`;
+  } catch (err) {
+    // 파일이 없을 수 있다. 저장소에 올라가지 않으므로 받아 쓰는 사람은
+    // make_sim_buildings.py 를 먼저 돌려야 한다.
+    btn.textContent = "건물 없음";
+    document.getElementById("note").textContent =
+      "buildings.geojson 을 못 읽었다. tools/make_sim_buildings.py 를 먼저 돌린다";
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ---------- 연기 ----------
 function toggleSmoke() {
+  if (smokeEntity) { clearSmoke(); return; }
+  lightSmoke(FIRE.lon, FIRE.lat, 2);
+}
+
+function clearSmoke() {
+  if (!smokeEntity) return;
+  if (smokeEntity.__ps) viewer.scene.primitives.remove(smokeEntity.__ps);
+  viewer.entities.remove(smokeEntity);
+  smokeEntity = null;
   const btn = document.getElementById("smoke");
-  if (smokeEntity) {
-    if (smokeEntity.__ps) viewer.scene.primitives.remove(smokeEntity.__ps);
-    viewer.entities.remove(smokeEntity);
-    smokeEntity = null;
-    btn.textContent = "연기 켜기"; btn.classList.add("off");
-    hud(); return;
-  }
-  const g = groundHeight(FIRE.lon, FIRE.lat) ?? 0;
-  const pos = Cesium.Cartesian3.fromDegrees(FIRE.lon, FIRE.lat, g + 2);
+  btn.textContent = "연기 켜기"; btn.classList.add("off");
+  hud();
+}
+
+// agl 은 지면에서 연기가 나기 시작하는 높이다. 산불은 2m, 건물 위 연기는
+// 그 건물 옥상 높이를 넣는다. 연기 자체는 어느 쪽이든 같은 것을 쓴다.
+// 굴뚝 연기가 산불 연기와 어떻게 다른지 우리가 가진 데이터로는 모르므로,
+// 모양을 다르게 지어내지 않는다.
+function lightSmoke(lon, lat, agl) {
+  if (smokeEntity) clearSmoke();
+  const g = (groundHeight(lon, lat) ?? 0) + (agl === undefined ? 2 : agl);
+  const pos = Cesium.Cartesian3.fromDegrees(lon, lat, g);
   smokeEntity = viewer.entities.add({
     position: pos,
     ellipsoid: { radii: new Cesium.Cartesian3(1, 1, 1), show: false },
@@ -141,7 +208,7 @@ function toggleSmoke() {
   // URL 이어야 한다), 시계가 멈춰 있어 입자가 나이를 안 먹었다. 둘 다 고친다.
   viewer.clock.shouldAnimate = true;
 
-  const base = g + 2;
+  const base = g;
   const up = Cesium.Transforms.eastNorthUpToFixedFrame(pos);
   const rot = Cesium.Matrix4.getMatrix3(up, new Cesium.Matrix3());
   const ps = new Cesium.ParticleSystem({
@@ -186,6 +253,8 @@ function toggleSmoke() {
   btn2.textContent = "연기 끄기"; btn2.classList.remove("off");
   hud();
 }
+window.lightSmoke = lightSmoke;
+window.clearSmoke = clearSmoke;
 
 // 입자에 쓸 둥근 연기 점. 캔버스 객체가 아니라 데이터 URL 로 넘긴다.
 function puffDataUrl() {
@@ -405,9 +474,60 @@ async function scenes(points, D, h, bearing) {
 }
 window.scenes = scenes;
 
+// ---------- 건물 위 연기와 산림 연기 ----------
+// 같은 연기를 건물 옥상과 산림 한가운데에 두고 한 장씩 찍는다. 사진만으로
+// 둘을 가릴 수 있는지, 건물 위치를 넣으면 달라지는지 보려고 만들었다.
+//
+// 자리는 tools/building_score.py 로 골랐다. 산림 자리는 반경 100m 안에
+// 건물이 한 채도 없고, 건물 자리는 그 건물 옥상이다.
+//
+//     await scenes3()
+const SCENES3 = [
+  { id: "fire", lon: 128.904739, lat: 37.735290, agl: 2,
+    note: "보전녹지지역, 반경 100m 안 건물 0채" },
+  { id: "bldA", lon: 128.902294, lat: 37.744488, agl: 36,
+    note: "제3종일반주거지역, 12층 건물 옥상, 반경 100m 안 39채" },
+  { id: "bldB", lon: 128.901548, lat: 37.731693, agl: 6,
+    note: "자연녹지지역, 2층 건물 옥상, 반경 100m 안 17채" },
+];
+
+// 입자가 쌓여 기둥이 다 자랄 때까지 기다린다. 덜 자란 상태에서 찍으면
+// 장면끼리 연기 크기가 달라져 비교가 안 된다.
+async function grow(ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    viewer.scene.render();
+    await new Promise(r => setTimeout(r, 60));
+  }
+}
+
+async function scenes3(D, h, bearing, growMs) {
+  if (!buildingsDS) await toggleBuildings();
+  const out = [];
+  for (const s of SCENES3) {
+    clearSmoke();
+    // 연기를 피울 자리의 지형 타일을 먼저 띄워야 지면 높이를 읽는다
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(s.lon, s.lat, 1200),
+      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-60), roll: 0 } });
+    await settle(25);
+    lightSmoke(s.lon, s.lat, s.agl);
+    await grow(growMs === undefined ? 75000 : growMs);
+    const r = await shot(D === undefined ? 300 : D, h === undefined ? 120 : h,
+                         bearing === undefined ? 225 : bearing,
+                         { lat: s.lat, lon: s.lon, id: s.id });
+    out.push(Object.assign({ id: s.id, note: s.note }, r));
+  }
+  clearSmoke();
+  return out;
+}
+window.scenes3 = scenes3;
+window.SCENES3 = SCENES3;
+
 document.getElementById("fly").addEventListener("click", autoFly);
 document.getElementById("smoke").addEventListener("click", toggleSmoke);
 document.getElementById("grab").addEventListener("click", grabFrame);
+document.getElementById("bld").addEventListener("click", toggleBuildings);
 boot();
 </script>
 </body>
