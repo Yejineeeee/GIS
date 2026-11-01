@@ -7,7 +7,8 @@
 ## 흐름
 
 ```
-탐지 결과 JSON (tools/predict_seg.py 또는 tools/replay.py)
+사진 → 탐지 src/pipeline/detect.py (best.pt, imgsz 960, conf 0.10)
+   또는 미리 만든 탐지 결과 JSON (tools/predict_seg.py, tools/replay.py)
  → 좌표 변환 src/geo/transform.py (3.3)
  → 지리 조회 src/geo/query.py (3.4)
  → 판정 src/pipeline/verdict.py (임시. 3.6이 끝나면 judge()만 교체)
@@ -20,13 +21,18 @@
 ## 쓰는 법
 
 ```bash
-# 1) 탐지 결과 만들기
-python tools/predict_seg.py 가중치.pt 이미지폴더 results/detections
+# 사진부터 한 번에 (기본)
+python src/pipeline/run.py --frames 사진폴더 --weights best.pt \
+    --geo-dir data/geo_moraegogae --vlm fake
 
-# 2) 파이프라인
-python src/pipeline/run.py --detections results/detections --frames 이미지폴더 \
+# 미리 만든 탐지 결과 JSON으로
+python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
     --geo-dir data/geo_moraegogae --vlm fake
 ```
+
+사진 옆에 같은 이름의 JSON(시뮬레이터 프레임)이 있으면 그 카메라 값을 쓰고,
+`truth`(정답 좌표)가 있으면 알람 위치가 정답에서 몇 m 떨어졌는지, 오차 반경 안인지 함께 출력한다.
+없으면 `tools/predict_seg.py`의 가정값과 시연 지역 좌표를 쓴다.
 
 | 옵션 | 내용 |
 |---|---|
@@ -41,6 +47,7 @@ python src/pipeline/run.py --detections results/detections --frames 이미지폴
 
 | 파일 | 내용 |
 |---|---|
+| `detections/` | (`--weights`일 때) 프레임별 탐지 결과 JSON |
 | `alerts/<alert_id>.json` | 알람의 최신 상태. 대시보드(5.5)가 읽는다 |
 | `alerts.jsonl` | 발행 기록. 설명 전과 후가 차례로 쌓인다 |
 | `debug.jsonl` | 형식에 없는 중간 값(대표 픽셀, 가정값, 조회 지점 수, 규칙 위반) |
@@ -62,16 +69,34 @@ python src/pipeline/run.py --detections results/detections --frames 이미지폴
 
 ## 확인한 것
 
-가짜 지리 자료와 `tools/replay.py` 입력으로 돌려 보았다.
+1) 가짜 지리 자료와 `tools/replay.py` 입력
 
 - 8프레임 → 알람 7개, 형식 검사 7/7 통과 (`--vlm fake`)
 - 같은 탐지 3프레임 → 알람 1개, 묶음 2
 - 판정 세 가지가 모두 나오는 것 확인 (임계값 보간, 커버리지, 얕은 각)
 
+2) 실제 자료: best.pt, 모래고개입구 용도지역 286개·건물 15,876채·DEM 2도엽, 시뮬레이터 프레임 4장 (11/1, CPU 2코어 클라우드 환경)
+
+| 사진 | 거리 | 탐지 | 알람 | 정답과 거리 / 오차 반경 |
+|---|---|---|---|---|
+| sim_0000 | 300m | 4개 (0.15~0.21) | 2개 (2개는 묶음) | 140.7m, 170.5m / 약 11m |
+| sim_0001 | 150m | 1개 (0.56) | 1개 | 54.8m / 13.2m |
+| sim_0002 | 350m | 1개 (0.18) | 1개 | 234.3m / 11.5m |
+| sim_0003 | 500m | 없음 | 없음 | - |
+
+- 사진에서 탐지, 좌표, 지리 조회, 판정, 알람, 설명까지 끊김 없이 돌았다. 형식 검사 4/4 통과
+- **네 장 모두 사진에 연기가 보이지 않는다.** 탐지 6개는 모두 헛탐지다(도로, 흰 지붕, 비닐하우스).
+  그래서 정답과의 거리는 좌표 변환 오차가 아니라 헛탐지 위치까지의 거리다. 연기를 켜고 프레임을 다시 뽑아야 한다
+- 헛탐지인데도 오차 반경이 약 11m로 작아 모두 확정이 나왔다. 카메라 값을 알면 반경이
+  GNSS 오차와 연기 밑동 항만 남기 때문이다. 탐지가 틀린 경우는 반경이 막지 못한다
+- 지리 조회가 알람 하나에 1.1~1.6초 걸린다. 건물 15,876채를 매번 전부 확인하기 때문이다
+- 탐지는 장당 약 0.35~0.43초 (첫 장은 모델 준비 포함 약 3초)
+
 ## 남은 것
 
-- 실제 지리 자료(`data/geo_moraegogae`)와 탐지 가중치로 돌리기
+- 연기를 켠 시뮬레이터 프레임으로 다시 돌려 좌표 오차 재기
 - `--vlm qwen` 실제 실행 확인 (GPU 기기)
 - VLM이 도는 동안 다음 프레임이 기다린다. 알람과 설명을 따로 돌리는 것은 5.4
 - `evidence.buildings_in_radius`는 주거 건물이 아니라 전체 건물 수다 (건물 자료에 용도 정보 없음)
-- 실제 건물 1.5만 채로 조회하면 건물 근접 계산이 느릴 수 있다. 시간이 길면 건물 목록을 미리 범위로 걸러 둔다
+- 지리 조회 1초대: 건물 목록을 위치별 칸으로 미리 나눠 두면 줄일 수 있다 (query.py, 3.4 담당과 상의)
+- VLM이 연기 없음이라고 답해도 알람은 남는다. 헛탐지를 알람에서 내릴지 표시만 할지 정해야 한다
