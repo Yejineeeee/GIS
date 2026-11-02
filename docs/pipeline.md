@@ -1,8 +1,8 @@
-# 전체 파이프라인 연결 (WBS 5.2)
+# 전체 파이프라인 (WBS 5.2 연결, 5.4 알람과 해설 분리)
 
-탐지 결과부터 설명이 붙은 알람까지 한 번에 돌린다.
+사진부터 설명이 붙은 알람까지 한 번에 돌린다. 지도 화면은 `docs/dashboard.md` (5.5).
 
-담당: 박서연 / 상태: 첫 연결 (판정은 임시 규칙)
+담당: 박서연 / 상태: 연결 완료, 알람·해설 분리 완료 (판정은 임시 규칙)
 
 ## 흐름
 
@@ -12,10 +12,10 @@
  → 좌표 변환 src/geo/transform.py (3.3)
  → 지리 조회 src/geo/query.py (3.4)
  → 판정 src/pipeline/verdict.py (임시. 3.6이 끝나면 judge()만 교체)
- → 알람 발행 (설명 null)
- → VLM 사실 추출 src/pipeline/vlm_client.py (방식 iii, run_structured.py와 같은 설정)
- → 문장 조립 src/vlm/templates.py
- → 같은 alert_id로 설명을 붙여 다시 발행
+ → 알람 발행 (설명 null) src/pipeline/alert.py
+      └→ (따로 도는 스레드) VLM 사실 추출 src/pipeline/vlm_client.py
+         → 문장 조립 src/vlm/templates.py
+         → 같은 alert_id로 설명을 붙여 다시 발행
 ```
 
 ## 쓰는 법
@@ -40,6 +40,8 @@ python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
 | `--vlm none` | 설명 없이 알람만 |
 | `--vlm fake` | 고정된 사실로 설명을 만든다. 연결 확인용, 결과로 쓰지 않는다 |
 | `--vlm qwen` | Qwen2.5-VL-3B 4bit. GPU가 있으면 GPU |
+| `--fake-sec 6` | fake VLM이 걸리는 시간을 흉내 낸다 (분리 출력 시험용) |
+| `--sync` | 설명을 기다렸다가 다음 프레임으로 (5.2 방식, 비교용) |
 | `--interval 1.5` | 프레임 사이를 실제처럼 띄운다 |
 | `--no-merge` | 같은 사건 묶기를 끈다 |
 
@@ -61,6 +63,26 @@ python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
 - 최다비율 규칙, 목표 정확도 95% 임계값: 10m 0.00 / 30m 0.57 / 50m 0.72 / 100m 0.80 (사이는 직선, 100m 초과는 0.80)
 - 모호: 1·2순위 합 0.9 이상
 - 미확정: 조회 결과 없음, 용도지역이 원의 60% 미만만 덮음, 내려다보는 각이 얕음(transform의 `shallow`)
+
+## 알람과 해설 분리 (5.4)
+
+판정까지 끝나면 설명 없이 알람을 바로 낸다(`description`, `observed`, `latency_ms.vlm`,
+`latency_ms.alert_to_description`이 null). VLM 설명은 따로 도는 스레드가 만들고,
+끝나면 같은 `alert_id`로 다시 낸다. VLM이 오래 걸려도 다음 프레임의 탐지와 알람은 기다리지 않는다.
+
+- `alerts/<alert_id>.json`은 늘 최신 상태다. 쓰는 중인 파일을 대시보드가 읽지 않도록 임시 파일에 쓴 뒤 한 번에 바꾼다
+- `alerts.jsonl`에는 설명 전과 후가 차례로 쌓여, 알람이 언제 나가고 설명이 언제 붙었는지 남는다
+- VLM이 연기가 보이지 않는다고 답하면 화면에 헛탐지 가능성으로 표시한다. 알람을 내릴지는 팀 결정 전이라 남겨 둔다
+
+가짜 자료 8프레임, 프레임 간격 1초, fake VLM 2초로 비교한 결과
+
+| | 마지막 알람까지 | 알람 → 설명 (중앙값) |
+|---|---|---|
+| 차례대로 (`--sync`) | 23.2초 | 2.0초 |
+| 분리 (기본) | 8.9초 | 4.6초 |
+
+알람은 VLM을 기다리지 않게 되었다. 대신 VLM이 알람이 생기는 속도보다 느리면 설명이 줄을 서서
+알람 → 설명 시간이 늘어난다. 실제 VLM(GGUF 35초)에서는 오래된 알람 설명을 건너뛸지 정해야 한다.
 
 ## 같은 사건 묶기
 
@@ -96,7 +118,7 @@ python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
 
 - 연기를 켠 시뮬레이터 프레임으로 다시 돌려 좌표 오차 재기
 - `--vlm qwen` 실제 실행 확인 (GPU 기기)
-- VLM이 도는 동안 다음 프레임이 기다린다. 알람과 설명을 따로 돌리는 것은 5.4
+- 설명 줄이 길어질 때 오래된 알람을 건너뛸지 (실제 VLM 속도로 시험)
 - `evidence.buildings_in_radius`는 주거 건물이 아니라 전체 건물 수다 (건물 자료에 용도 정보 없음)
 - 지리 조회 1초대: 건물 목록을 위치별 칸으로 미리 나눠 두면 줄일 수 있다 (query.py, 3.4 담당과 상의)
 - VLM이 연기 없음이라고 답해도 알람은 남는다. 헛탐지를 알람에서 내릴지 표시만 할지 정해야 한다
