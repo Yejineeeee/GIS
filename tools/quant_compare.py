@@ -7,11 +7,12 @@
 한 프로세스에서 여러 설정을 재면 앞 모델이 완전히 비워지지 않아 값이 섞인다.
 그래서 설정마다 프로세스를 새로 띄운다.
 
-    python quant_compare.py [모델이름] [이미지경로]
+    python quant_compare.py [모델이름] [이미지경로] [출력파일]
 """
 import sys, os, json, csv, subprocess
 
-SETTINGS = ["fp16", "8bit", "4bit-fp4", "4bit-nf4", "4bit-nf4-double"]
+SETTINGS = ["fp16", "8bit", "4bit-fp4", "4bit-nf4", "4bit-nf4-double",
+            "4bit-nf4-double-bf16"]
 MAX_PATCHES = 6
 
 
@@ -25,23 +26,34 @@ def run_one(setting, model_id, image_path):
     det = json.load(open("schema/detection.example.json", encoding="utf-8"))
     alert = json.load(open("schema/alert.example.json", encoding="utf-8"))
     image = Image.open(image_path).convert("RGB")
+    image.thumbnail((1024, 1024))
 
     if setting == "fp16":
         quant = None
     elif setting == "8bit":
         quant = BitsAndBytesConfig(load_in_8bit=True)
     else:
+        compute = torch.bfloat16 if "bf16" in setting else torch.float16
         quant = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16,
+            load_in_4bit=True, bnb_4bit_compute_dtype=compute,
             bnb_4bit_quant_type="fp4" if "fp4" in setting else "nf4",
             bnb_4bit_use_double_quant="double" in setting)
 
     free0 = torch.cuda.mem_get_info()[0] / 1024**3
     t0 = time.time()
     processor = AutoProcessor.from_pretrained(model_id)
-    processor.image_processor.max_patches = MAX_PATCHES
+    ip = getattr(processor, "image_processor", None)
+    if ip is not None:
+        # InternVL 은 타일 수로, Qwen 은 픽셀 수로 입력 크기를 정한다.
+        # 다른 실행기(run_pilot.py 등)와 같은 상한을 써야 숫자가 비교된다.
+        if hasattr(ip, "max_patches"):
+            ip.max_patches = MAX_PATCHES
+        if hasattr(ip, "max_pixels"):
+            ip.max_pixels = 768 * 768
+            ip.min_pixels = 256 * 256
+    dt = torch.bfloat16 if "bf16" in setting else torch.float16
     model = AutoModelForImageTextToText.from_pretrained(
-        model_id, quantization_config=quant, device_map="cuda:0", dtype=torch.float16)
+        model_id, quantization_config=quant, device_map="cuda:0", dtype=dt)
     load_s = time.time() - t0
     weights = free0 - torch.cuda.mem_get_info()[0] / 1024**3
 
@@ -74,6 +86,7 @@ def run_one(setting, model_id, image_path):
 def main():
     model_id = sys.argv[1] if len(sys.argv) > 1 else "OpenGVLab/InternVL3-2B-hf"
     image_path = sys.argv[2] if len(sys.argv) > 2 else "data/pilot/synthetic_smoke.jpg"
+    out_path = sys.argv[3] if len(sys.argv) > 3 else "results/quant_compare.csv"
     rows = []
     for setting in SETTINGS:
         print(f"── {setting}")
@@ -94,11 +107,11 @@ def main():
     cols = ["설정", "가중치GB", "최대VRAM_GB", "로딩초", "생성초", "새토큰",
             "초당토큰", "형식준수", "출력"]
     os.makedirs("results", exist_ok=True)
-    with open("results/quant_compare.csv", "w", encoding="utf-8-sig", newline="") as f:
+    with open(out_path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
-    print("\n저장: results/quant_compare.csv")
+    print(f"\n저장: {out_path}")
 
 
 if __name__ == "__main__":
