@@ -8,6 +8,12 @@
 첫 시도는 방식 (i)과 같게 그리디 디코딩으로 한다. 재시도부터는 샘플링을 쓴다.
 그리디 디코딩은 같은 입력에 같은 답을 내므로 다시 써도 바뀌지 않는다.
 
+환경 변수 EVAL_FACTS 에 사실 목록 경로를 주면 파일럿 대신 평가셋(6.1)으로 돌린다.
+생성 방식 비교(4.6)가 이 길을 쓴다. 입력을 만드는 규칙은 src/vlm/eval_alert.py 에 있다.
+
+EVAL_RESUME 을 주면 출력 파일에 이미 있는 사진을 건너뛰고 뒤에 이어 쓴다. 중간에
+끊겼을 때 쓴다.
+
     python run_verify_retry.py [이미지폴더] [출력파일]
 """
 import sys, os, json, time, glob
@@ -15,6 +21,9 @@ import sys, os, json, time, glob
 MAX_RETRY = 3
 SRC = sys.argv[1] if len(sys.argv) > 1 else "data/pilot"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "results/method_ii.jsonl"
+FACTS = os.environ.get("EVAL_FACTS")
+RESUME = bool(os.environ.get("EVAL_RESUME"))
+DTYPE = os.environ.get("EVAL_DTYPE", "fp16")
 
 
 def fake_detection(name, i):
@@ -50,6 +59,20 @@ def fake_alert(i):
             "land_use": land, "description": None}
 
 
+def build_items():
+    """[(경로, 이름, 탐지, 알람)] 을 만든다. 평가셋이면 사실 목록에서 가져온다."""
+    if FACTS:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "vlm"))
+        import eval_alert
+        return [(p, n, det, al) for p, n, f, det, al in eval_alert.load(SRC, FACTS)]
+    files = (sorted(glob.glob(os.path.join(SRC, "smoke_*.jpg"))) +
+             sorted(glob.glob(os.path.join(SRC, "nosmoke_*.jpg"))))
+    if not files:
+        raise SystemExit(f"{SRC} 에 이미지가 없습니다.")
+    return [(p, os.path.basename(p), fake_detection(os.path.basename(p), i),
+             fake_alert(i)) for i, p in enumerate(files)]
+
+
 def parse(text):
     s = (text or "").strip().strip("`")
     if s.lower().startswith("json"):
@@ -71,30 +94,37 @@ def main():
     import prompts as P
     import verify
 
-    files = (sorted(glob.glob(os.path.join(SRC, "smoke_*.jpg"))) +
-             sorted(glob.glob(os.path.join(SRC, "nosmoke_*.jpg"))))
-    if not files:
-        raise SystemExit(f"{SRC} 에 이미지가 없습니다.")
+    items = build_items()
+
+    done = set()
+    if RESUME and os.path.exists(OUT):
+        with open(OUT, encoding="utf-8") as f:
+            done = {json.loads(line)["image"] for line in f if line.strip()}
+        items = [it for it in items if it[1] not in done]
+        if not items:
+            print(f"{OUT} 에 {len(done)}장이 이미 있습니다. 할 것이 없습니다.")
+            return
+        print(f"{len(done)}장은 이미 있어 건너뜁니다.", flush=True)
 
     mid = "Qwen/Qwen2.5-VL-3B-Instruct"
+    dt = torch.bfloat16 if DTYPE == "bf16" else torch.float16
     quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
-                               bnb_4bit_compute_dtype=torch.float16,
+                               bnb_4bit_compute_dtype=dt,
                                bnb_4bit_use_double_quant=True)
     processor = AutoProcessor.from_pretrained(mid)
     processor.image_processor.max_pixels = 768 * 768
     processor.image_processor.min_pixels = 256 * 256
     model = AutoModelForImageTextToText.from_pretrained(
-        mid, quantization_config=quant, device_map="cuda:0", dtype=torch.float16)
-    print(f"{mid} 올림. 이미지 {len(files)}장, 최대 재시도 {MAX_RETRY}회", flush=True)
+        mid, quantization_config=quant, device_map="cuda:0", dtype=dt)
+    print(f"{mid} 올림. {'평가셋' if FACTS else '파일럿'} {len(items)}장, "
+          f"최대 재시도 {MAX_RETRY}회", flush=True)
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     passed = 0
-    with open(OUT, "w", encoding="utf-8") as out:
-        for i, path in enumerate(files):
-            name = os.path.basename(path)
+    with open(OUT, "a" if RESUME else "w", encoding="utf-8") as out:
+        for path, name, det, alert in items:
             image = Image.open(path).convert("RGB")
             image.thumbnail((1024, 1024))
-            det, alert = fake_detection(name, i), fake_alert(i)
             base = P.build("D", det, alert)
 
             tries, desc, bad, total = 0, None, ["시작 전"], 0.0
@@ -127,10 +157,10 @@ def main():
                 "sec": round(total, 1), "description": desc}, ensure_ascii=False) + "\n")
             out.flush()
             mark = f"{tries}회" if ok else f"{tries}회 실패"
-            print(f"  {name:16} {alert['location_verdict']:4} {mark:8} {total:5.1f}초  "
-                  f"{(desc or '')[:46]}", flush=True)
+            print(f"  {name[:40]:40} {alert['location_verdict']:4} {mark:8} "
+                  f"{total:5.1f}초  {(desc or '')[:40]}", flush=True)
 
-    print(f"\n통과 {passed}/{len(files)}  →  {OUT}")
+    print(f"\n통과 {passed}/{len(items)}  →  {OUT}")
 
 
 if __name__ == "__main__":

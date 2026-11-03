@@ -5,12 +5,18 @@ VLM 은 영상에서 본 사실만 JSON 으로 내고, 문장은 규칙이 조�
 스키마를 강제하므로 형식을 어길 수 없고, 문장을 코드가 만들므로 판정 규칙도 어길
 수 없다. 그래도 구현에 문제가 없는지 보려고 규칙 검사를 함께 돌린다.
 
+환경 변수 EVAL_FACTS 에 사실 목록 경로를 주면 파일럿 대신 평가셋(6.1)으로 돌린다.
+생성 방식 비교(4.6)가 이 길을 쓴다. 입력을 만드는 규칙은 src/vlm/eval_alert.py 에 있다.
+
     python run_structured.py [이미지폴더] [출력파일]
 """
 import sys, os, json, time, glob
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else "data/pilot"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "results/method_iii.jsonl"
+FACTS = os.environ.get("EVAL_FACTS")
+DTYPE = os.environ.get("EVAL_DTYPE", "fp16")
+RESUME = bool(os.environ.get("EVAL_RESUME"))
 
 SCHEMA = {
     "type": "object",
@@ -37,6 +43,26 @@ terrain        주로 보이는 지형"""
 
 
 
+def build_items():
+    """[(경로, 이름, 알람, 연기있음)] 을 만든다. 평가셋이면 사실 목록에서 가져온다.
+
+    연기있음은 판정 준수율의 분모다. 연기가 없는 사진은 알람이 뜰 상황이 아니므로
+    위치 표현을 요구하지 않는다. 채점기(tools/score_descriptions.py)와 같은 기준이다.
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "vlm"))
+    if FACTS:
+        import eval_alert
+        return [(p, n, al, eval_alert.has_smoke(f))
+                for p, n, f, det, al in eval_alert.load(SRC, FACTS)]
+    from fake_alert import fake_alert
+    files = (sorted(glob.glob(os.path.join(SRC, "smoke_*.jpg"))) +
+             sorted(glob.glob(os.path.join(SRC, "nosmoke_*.jpg"))))
+    if not files:
+        raise SystemExit(f"{SRC} 에 이미지가 없습니다.")
+    return [(p, os.path.basename(p), fake_alert(i),
+             os.path.basename(p).startswith("smoke")) for i, p in enumerate(files)]
+
+
 def build_tokenizer_data(tokenizer):
     from lmformatenforcer import TokenEnforcerTokenizerData
     vocab = tokenizer.get_vocab()
@@ -61,33 +87,37 @@ def main():
     from lmformatenforcer import TokenEnforcer, JsonSchemaParser
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "vlm"))
     import templates, verify
-    from fake_alert import fake_alert
 
-    files = (sorted(glob.glob(os.path.join(SRC, "smoke_*.jpg"))) +
-             sorted(glob.glob(os.path.join(SRC, "nosmoke_*.jpg"))))
-    if not files:
-        raise SystemExit(f"{SRC} 에 이미지가 없습니다.")
+    items = build_items()
+
+    done = set()
+    if RESUME and os.path.exists(OUT):
+        with open(OUT, encoding="utf-8") as f:
+            done = {json.loads(line)["image"] for line in f if line.strip()}
+        items = [it for it in items if it[1] not in done]
+        print(f"{len(done)}장은 이미 있어 건너뜁니다.", flush=True)
+        if not items:
+            return
 
     mid = "Qwen/Qwen2.5-VL-3B-Instruct"
+    dt = torch.bfloat16 if DTYPE == "bf16" else torch.float16
     quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
-                               bnb_4bit_compute_dtype=torch.float16,
+                               bnb_4bit_compute_dtype=dt,
                                bnb_4bit_use_double_quant=True)
     processor = AutoProcessor.from_pretrained(mid)
     processor.image_processor.max_pixels = 768 * 768
     processor.image_processor.min_pixels = 256 * 256
     model = AutoModelForImageTextToText.from_pretrained(
-        mid, quantization_config=quant, device_map="cuda:0", dtype=torch.float16)
+        mid, quantization_config=quant, device_map="cuda:0", dtype=dt)
     data = build_tokenizer_data(processor.tokenizer)
-    print(f"{mid} 올림. 이미지 {len(files)}장", flush=True)
+    print(f"{mid} 올림. {'평가셋' if FACTS else '파일럿'} {len(items)}장", flush=True)
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     schema_ok = rule_ok = rule_total = 0
-    with open(OUT, "w", encoding="utf-8") as out:
-        for i, path in enumerate(files):
-            name = os.path.basename(path)
+    with open(OUT, "a" if RESUME else "w", encoding="utf-8") as out:
+        for path, name, alert, counted in items:
             image = Image.open(path).convert("RGB")
             image.thumbnail((1024, 1024))
-            alert = fake_alert(i)
 
             enforcer = TokenEnforcer(data, JsonSchemaParser(SCHEMA))
 
@@ -116,7 +146,6 @@ def main():
 
             desc = templates.build(observed, alert) if observed else None
             bad = verify.check(desc, alert, observed)
-            counted = name.startswith("smoke")
             rule_total += counted
             rule_ok += counted and not bad
 
@@ -128,11 +157,11 @@ def main():
                 "violations": bad, "sec": round(sec, 1),
                 "description": desc}, ensure_ascii=False) + "\n")
             out.flush()
-            print(f"  {name:16} {alert['location_verdict']:4} {sec:5.1f}초  "
+            print(f"  {name[:40]:40} {alert['location_verdict']:4} {sec:5.1f}초  "
                   f"{'통과' if not bad else bad}", flush=True)
             print(f"     {desc}", flush=True)
 
-    print(f"\n스키마 준수 {schema_ok}/{len(files)}   "
+    print(f"\n스키마 준수 {schema_ok}/{len(items)}   "
           f"판정 준수 {rule_ok}/{rule_total} (연기 있는 사진만)")
     print(f"→ {OUT}")
 

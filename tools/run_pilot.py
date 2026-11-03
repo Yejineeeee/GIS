@@ -5,6 +5,9 @@
 받은 것을 쓰고, 조건 B에 넣는 탐지 결과는 가짜 값이다. 형식만 실제와 같다.
 설명이 한국어로 나오는지, 형식을 지키는지, 조건을 바꾸면 달라지는지를 본다.
 
+환경 변수 EVAL_FACTS 에 사실 목록 경로를 주면 파일럿 대신 평가셋(6.1)으로 돌린다.
+생성 방식 비교(4.6)가 이 길을 쓴다. 입력을 만드는 규칙은 src/vlm/eval_alert.py 에 있다.
+
     python run_pilot.py [이미지폴더] [출력파일]
 """
 import sys, os, json, time, glob, subprocess
@@ -12,6 +15,7 @@ import sys, os, json, time, glob, subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "src", "vlm"))
 from fake_alert import fake_alert as base_alert
+import eval_alert
 
 MODELS = {"internvl": "OpenGVLab/InternVL3-2B-hf",
           "qwen": "Qwen/Qwen2.5-VL-3B-Instruct"}
@@ -19,6 +23,9 @@ CONDS = os.environ.get("PILOT_CONDS", "A,B").split(",")
 MAX_PATCHES = 6
 IMAGES = sys.argv[1] if len(sys.argv) > 1 else "data/pilot"
 OUTFILE = sys.argv[2] if len(sys.argv) > 2 else "results/pilot_outputs.jsonl"
+FACTS = os.environ.get("EVAL_FACTS")
+DTYPE = os.environ.get("EVAL_DTYPE", "fp16")
+RESUME = bool(os.environ.get("EVAL_RESUME"))
 
 
 def fake_detection(name, i):
@@ -50,15 +57,29 @@ def fake_alert(i):
     return a
 
 
-def run_model(key, model_id, files, out):
+def build_items():
+    """[(경로, 이름, 탐지, 알람, 판정)] 을 만든다. 평가셋이면 사실 목록에서 가져온다."""
+    if FACTS:
+        return [(p, n, det, al, f["verdict"])
+                for p, n, f, det, al in eval_alert.load(IMAGES, FACTS)]
+    files = (sorted(glob.glob(os.path.join(IMAGES, "smoke_*.jpg"))) +
+             sorted(glob.glob(os.path.join(IMAGES, "nosmoke_*.jpg"))))
+    if not files:
+        raise SystemExit(f"{IMAGES} 에 이미지가 없습니다.")
+    return [(p, os.path.basename(p), fake_detection(os.path.basename(p), i),
+             fake_alert(i), None) for i, p in enumerate(files)]
+
+
+def run_model(key, model_id, items, out):
     import torch
     from PIL import Image
     from transformers import AutoProcessor, AutoModelForImageTextToText, BitsAndBytesConfig
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "vlm"))
     import prompts as P
 
+    dt = torch.bfloat16 if DTYPE == "bf16" else torch.float16
     quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
-                               bnb_4bit_compute_dtype=torch.float16,
+                               bnb_4bit_compute_dtype=dt,
                                bnb_4bit_use_double_quant=True)
     t0 = time.time()
     processor = AutoProcessor.from_pretrained(model_id)
@@ -71,16 +92,13 @@ def run_model(key, model_id, files, out):
             ip.max_pixels = 768 * 768          # 4GB 안에 들어오게 상한을 건다
             ip.min_pixels = 256 * 256
     model = AutoModelForImageTextToText.from_pretrained(
-        model_id, quantization_config=quant, device_map="cuda:0", dtype=torch.float16)
+        model_id, quantization_config=quant, device_map="cuda:0", dtype=dt)
     print(f"[{key}] 로딩 {time.time()-t0:.0f}초  "
           f"가중치 {torch.cuda.memory_allocated()/1024**3:.2f}GB", flush=True)
 
-    for i, path in enumerate(files):
-        name = os.path.basename(path)
+    for path, name, det, alert, verdict in items:
         image = Image.open(path).convert("RGB")
         image.thumbnail((1024, 1024))
-        det = fake_detection(name, i)
-        alert = fake_alert(i)
         for cond in CONDS:
             msg = [{"role": "user", "content": [
                 {"type": "image", "image": image},
@@ -95,27 +113,34 @@ def run_model(key, model_id, files, out):
             torch.cuda.synchronize(); sec = time.time() - t
             n_in = inputs["input_ids"].shape[1]
             text = processor.decode(o[0][n_in:], skip_special_tokens=True).strip()
-            out.write(json.dumps({"image": name, "model": key, "cond": cond,
-                                  "text": text, "sec": round(sec, 1),
-                                  "tokens_in": n_in}, ensure_ascii=False) + "\n")
+            rec = {"image": name, "model": key, "cond": cond, "text": text,
+                   "sec": round(sec, 1), "tokens_in": n_in}
+            if verdict is not None:
+                rec["verdict"] = verdict      # 채점기가 알람이 섞였는지 본다
+            out.write(json.dumps(rec, ensure_ascii=False) + "\n")
             out.flush()
-            print(f"  {name} {cond} {sec:4.1f}초  {text[:60]}", flush=True)
+            print(f"  {name[:44]} {cond} {sec:4.1f}초  {text[:46]}", flush=True)
 
 
 def main():
-    files = sorted(glob.glob(os.path.join(IMAGES, "smoke_*.jpg"))) + \
-            sorted(glob.glob(os.path.join(IMAGES, "nosmoke_*.jpg")))
-    if not files:
-        raise SystemExit(f"{IMAGES} 에 이미지가 없습니다.")
+    items = build_items()
+    if RESUME and os.path.exists(OUTFILE):
+        with open(OUTFILE, encoding="utf-8") as f:
+            done = {json.loads(line)["image"] for line in f if line.strip()}
+        items = [it for it in items if it[1] not in done]
+        print(f"{len(done)}장은 이미 있어 건너뜁니다.", flush=True)
+        if not items:
+            return
     os.makedirs(os.path.dirname(OUTFILE), exist_ok=True)
-    print(f"이미지 {len(files)}장 × 모델 {len(MODELS)}개 × 조건 {len(CONDS)}개 "
-          f"= {len(files)*len(MODELS)*len(CONDS)}건", flush=True)
+    n_model = sum(1 for k in MODELS if os.environ.get("PILOT_ONE") in (None, k))
+    print(f"{'평가셋' if FACTS else '파일럿'} {len(items)}장 × 모델 {n_model}개 "
+          f"× 조건 {len(CONDS)}개 = {len(items)*n_model*len(CONDS)}건", flush=True)
     mode = "a" if os.path.exists(OUTFILE) else "w"
     with open(OUTFILE, mode, encoding="utf-8") as out:
         for key, mid in MODELS.items():
             # 모델마다 프로세스를 새로 띄워야 메모리가 섞이지 않는다
             if os.environ.get("PILOT_ONE") in (None, key):
-                run_model(key, mid, files, out)
+                run_model(key, mid, items, out)
                 if os.environ.get("PILOT_ONE"):
                     break
 
