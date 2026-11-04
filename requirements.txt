@@ -1,0 +1,22 @@
+# Python 3.11, Windows, RTX 3050 4GB 노트북에서 동작 확인 (2026-11-04)
+# torch 는 CUDA 12.4 빌드를 따로 받는다:
+#   pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+#   pip install -r requirements.txt
+
+# 모델과 VLM
+torch==2.6.0
+torchvision==0.21.0
+transformers==5.17.0
+bitsandbytes==0.50.2
+accelerate==1.15.0
+lm-format-enforcer==0.11.3
+ultralytics==8.4.202
+
+# 이미지와 수치
+pillow==13.0.0
+numpy==2.4.6
+
+# 지리 처리와 그래프
+shapely==2.2.0
+pyproj==3.7.2
+matplotlib==3.11.2

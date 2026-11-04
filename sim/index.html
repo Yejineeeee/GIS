@@ -474,6 +474,46 @@ async function scenes(points, D, h, bearing) {
 }
 window.scenes = scenes;
 
+// ---------- 지형 높이 격자 ----------
+// 시뮬레이터 프레임의 위치 오차를 잴 때 DEM 대신 쓴다. V-World 90m DEM 은
+// Cesium 지형과 높이 차이가 자리마다 달라서(발화점 +13m, 드론 자리 +25~31m),
+// 탐지가 밑동을 정확히 짚어도 600m 에서 94m, 800m 에서 123m 가 틀렸다.
+// 시뮬레이터가 그린 지형을 그대로 뽑아 쓰면 이 오차가 없어진다.
+//
+//     await terrainGrid()            발화점 중심 ±1500m, 15m 간격
+//
+// tools/sim_server.py 로 띄웠을 때 sim/terrain.json 으로 저장되고,
+// src/geo/sim_terrain.py 가 읽는다. 높이는 타원체 기준이지만 좌표 변환은
+// 드론과 지면의 높이 차만 쓰므로 기준은 상관없다.
+async function terrainGrid(halfM, stepM) {
+  halfM = halfM || 1500;
+  stepM = stepM || 15;
+  const n = Math.round(2 * halfM / stepM) + 1;
+  const mLat = 111320, mLon = 111320 * Math.cos(Cesium.Math.toRadians(FIRE.lat));
+  const pts = [];
+  for (let i = 0; i < n; i++) {          // i: 남 → 북
+    for (let j = 0; j < n; j++) {        // j: 서 → 동
+      const north = -halfM + i * stepM, east = -halfM + j * stepM;
+      pts.push(Cesium.Cartographic.fromDegrees(
+        FIRE.lon + east / mLon, FIRE.lat + north / mLat));
+    }
+  }
+  // 화면에 그린 타일이 아니라 지형 자료의 가장 세밀한 단계에서 읽는다
+  const CH = 4000;
+  for (let k = 0; k < pts.length; k += CH) {
+    await Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, pts.slice(k, k + CH));
+  }
+  const heights = pts.map(p => +p.height.toFixed(2));
+  const body = { lat0: FIRE.lat, lon0: FIRE.lon, half_m: halfM, step_m: stepM, n: n,
+                 m_per_deg_lat: mLat, m_per_deg_lon: mLon,
+                 source: "Cesium World Terrain", heights: heights };
+  const res = await fetch("/terrain", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body) });
+  return { n: n, points: heights.length, saved: (await res.json()).saved };
+}
+window.terrainGrid = terrainGrid;
+
 // ---------- 건물 위 연기와 산림 연기 ----------
 // 같은 연기를 건물 옥상과 산림 한가운데에 두고 한 장씩 찍는다. 사진만으로
 // 둘을 가릴 수 있는지, 건물 위치를 넣으면 달라지는지 보려고 만들었다.

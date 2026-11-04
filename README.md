@@ -205,11 +205,16 @@ VLM은 영상에서 보이는 사실만 JSON으로 내고, 불확실성 표현�
 
 ## 🚀 개발 환경
 
-Python 3.11 이상. 도구 스크립트에 필요한 패키지는 다음과 같다.
+Python 3.11. 가상환경을 만들고, torch는 CUDA 빌드를 먼저 받은 뒤 나머지를 설치한다.
 
-```bash
-pip install shapely pyproj matplotlib
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+pip install -r requirements.txt
 ```
+
+지리 도구만 쓸 때는 `pip install shapely pyproj matplotlib`만으로 충분하다.
 
 V-World 인증키는 환경변수로 넣는다. 코드나 문서에 키를 적지 않는다.
 
