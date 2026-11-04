@@ -10,6 +10,7 @@
     GET  /            시뮬레이터 페이지
     POST /frame       {"png": "data:image/png;base64,...", "meta": {...}}
                       -> frames/sim_<번호>.png 와 .json 으로 저장
+    POST /terrain     지형 높이 격자 -> terrain.json 으로 저장 (src/geo/sim_terrain.py)
 """
 import base64
 import json
@@ -37,7 +38,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        if self.path != "/frame":
+        if self.path not in ("/frame", "/terrain"):
             self.send_error(404)
             return
         n = int(self.headers.get("Content-Length", 0))
@@ -45,6 +46,13 @@ class Handler(SimpleHTTPRequestHandler):
             body = json.loads(self.rfile.read(n).decode("utf-8"))
         except Exception as e:
             self.send_error(400, str(e))
+            return
+
+        if self.path == "/terrain":
+            # 지형 높이 격자 (index.html 의 terrainGrid). 한 벌만 두고 덮어쓴다
+            with open(os.path.join(ROOT, "terrain.json"), "w", encoding="utf-8") as f:
+                json.dump(body, f)
+            self._json({"saved": "terrain.json"})
             return
 
         os.makedirs(FRAMES, exist_ok=True)
@@ -60,7 +68,10 @@ class Handler(SimpleHTTPRequestHandler):
         with open(os.path.join(FRAMES, stem + ".json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
-        out = json.dumps({"saved": stem}).encode("utf-8")
+        self._json({"saved": stem})
+
+    def _json(self, obj):
+        out = json.dumps(obj).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(out)))
