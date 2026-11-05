@@ -59,9 +59,10 @@ def _tokenizer_data(tokenizer):
 
 
 class VLM:
-    def __init__(self, mode="none", model_id=MODEL_ID):
+    def __init__(self, mode="none", model_id=MODEL_ID, fake_sec=0.0):
         self.mode = mode
         self.device = None
+        self.fake_sec = fake_sec      # fake 모드에서 VLM이 걸리는 시간을 흉내 낸다
         if mode == "qwen":
             self._load(model_id)
         elif mode not in ("none", "fake"):
@@ -89,6 +90,8 @@ class VLM:
         if self.mode == "none":
             return None, None, ""
         if self.mode == "fake":
+            if self.fake_sec:
+                time.sleep(self.fake_sec)
             return dict(FAKE_OBSERVED), round((time.perf_counter() - t0) * 1000), "fake"
 
         import torch
