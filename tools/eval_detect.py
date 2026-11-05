@@ -40,6 +40,7 @@ from PIL import Image, ImageDraw  # noqa: E402
 SMOKE = {1, 2, 3}
 NAMES = {1: "흑색연기", 2: "백색회색연기", 3: "화염", 4: "구름", 5: "안개연무", 6: "굴뚝연기"}
 MASK_LONG = 960
+SMALL_PCT = 0.2        # 연기 넓이(화면 대비 %)가 이보다 작으면 작은 연기
 
 
 def poly_mask(polys, W, H):
@@ -98,7 +99,12 @@ def main():
             other = [g["cat"] for g in gts if g["cat"] not in SMOKE and np.logical_and(m, g["mask"]).any()]
             dets.append({"score": d["score"], "mask": m, "smoke_overlap": float(smoke_ov),
                          "on": NAMES.get(other[0]) if other else None})
-        recs.append({"image": Path(jpg).name, "positive": positive, "cls": cls,
+        smoke_px = np.zeros_like(gts[0]["mask"]) if gts else None
+        for g in gts:
+            if g["cat"] in SMOKE and positive:
+                smoke_px |= g["mask"]
+        area = float(smoke_px.mean() * 100) if smoke_px is not None else 0.0
+        recs.append({"image": Path(jpg).name, "positive": positive, "cls": cls, "area_pct": area,
                      "gts": [g for g in gts if g["cat"] in SMOKE] if positive else [],
                      "others": [g for g in gts if g["cat"] not in SMOKE], "dets": dets,
                      "shape": (H, W)})
@@ -156,6 +162,20 @@ def main():
     for row in rows:
         print(f"  conf {row['conf']:.2f}: " + ", ".join(f"{k} {v}" for k, v in sorted(row["by_class"].items())))
 
+    print(f"\n작은 연기(넓이 {SMALL_PCT}% 미만)와 큰 연기, 배경 헛탐지 (docs/train_results.md 와 같은 기준)")
+    for row in rows:
+        c = row["conf"]
+        small = [r for r in recs if r["positive"] and r["area_pct"] < SMALL_PCT]
+        large = [r for r in recs if r["positive"] and r["area_pct"] >= SMALL_PCT]
+        neg = [r for r in recs if not r["positive"]]
+
+        def hits(rs):
+            return sum(any(d["score"] >= c and d["smoke_overlap"] > 0 for d in r["dets"]) for r in rs)
+        fa = sum(any(d["score"] >= c for d in r["dets"]) for r in neg)
+        row["small"], row["large"], row["bg_alarm"] = [hits(small), len(small)], [hits(large), len(large)], [fa, len(neg)]
+        print(f"  conf {c:.2f}: 작은 연기 {hits(small)}/{len(small)}, 큰 연기 {hits(large)}/{len(large)}, "
+              f"배경 헛탐지 {fa}/{len(neg)}")
+
     op = min(rows, key=lambda r: abs(r["conf"] - 0.10))
     print(f"\n운영 conf {op['conf']:.2f} 에서")
     miss = [r["image"] for r in recs if r["positive"] and not any(
@@ -172,6 +192,7 @@ def main():
     with open(out / "eval_detect.json", "w", encoding="utf-8") as f:
         json.dump({"rows": rows, "missed_at_op": miss, "fp_on_at_op": fp_on,
                    "per_image": [{"image": r["image"], "positive": r["positive"], "cls": r["cls"],
+                                 "area_pct": round(r["area_pct"], 3),
                                   "dets": [{"score": d["score"], "smoke_overlap": round(d["smoke_overlap"], 3),
                                             "on": d["on"]} for d in r["dets"]]} for r in recs]},
                   f, ensure_ascii=False, indent=1)
