@@ -144,7 +144,7 @@ def main():
                 observed, ok_schema = None, False
             schema_ok += ok_schema
 
-            desc = templates.build(observed, alert) if observed else None
+            desc = templates.build(observed, alert, use_vlm_facts=True) if observed else None
             bad = verify.check(desc, alert, observed)
             rule_total += counted
             rule_ok += counted and not bad

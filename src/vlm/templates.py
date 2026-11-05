@@ -30,14 +30,22 @@ TERRAIN_NEAR = {
 }
 
 
-def _what(observed):
-    """무엇이 보이는가. 연기가 없으면 그렇게 쓴다."""
-    if not observed.get("smoke_present"):
-        return "연기가 관측되지 않았다"
-    color = observed.get("smoke_color")
-    spread = SPREAD.get(observed.get("spread"), "퍼져")
-    head = f"{color} 연기가 {spread} 있다" if color and color != "없음" \
-        else f"연기가 {spread} 있다"
+def _what(observed, use_vlm_facts=False):
+    """무엇이 보이는가.
+
+    알람은 탐지(YOLO)와 후보 검증기를 거쳐 나온 것이라 연기는 있다고 쓴다. VLM 이 사진
+    전체를 보고 답한 연기 유무(62%), 색(21/70), 퍼짐(29%)은 늘 같은 답보다도 못해 문장에
+    쓰지 않는다(docs/vlm_compare.md). 비교 실험을 재현할 때만 use_vlm_facts=True 로 쓴다.
+    """
+    if use_vlm_facts:
+        if not observed.get("smoke_present"):
+            return "연기가 관측되지 않았다"
+        color = observed.get("smoke_color")
+        spread = SPREAD.get(observed.get("spread"), "퍼져")
+        head = f"{color} 연기가 {spread} 있다" if color and color != "없음" \
+            else f"연기가 {spread} 있다"
+    else:
+        head = "연기가 탐지되었다"
     if observed.get("flame_visible"):
         head += ". 불꽃도 함께 보인다"
     return head
@@ -81,16 +89,16 @@ def _near(observed, alert):
     return ". ".join(parts) if parts else None
 
 
-def build(observed, alert):
+def build(observed, alert, use_vlm_facts=False):
     """알람 설명 문장을 만든다.
 
-    연기가 없으면 위치와 주변 설명을 붙이지 않는다. 연기가 없는데 용도를 말하면
-    이상한 문장이 된다. 애초에 그런 경우는 알람이 뜰 상황이 아니다.
+    use_vlm_facts=True 는 4.6 비교 실험(tools/run_structured.py) 재현용이다. 그때는 VLM 이
+    연기가 없다고 하면 위치와 주변 설명을 붙이지 않는다.
     """
     observed = observed or {}
-    if observed and not observed.get("smoke_present"):
-        return _what(observed) + "."
-    pieces = [_what(observed), _where(alert)]
+    if use_vlm_facts and observed and not observed.get("smoke_present"):
+        return _what(observed, True) + "."
+    pieces = [_what(observed, use_vlm_facts), _where(alert)]
     near = _near(observed, alert)
     if near:
         pieces.append(near)
