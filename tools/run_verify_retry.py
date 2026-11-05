@@ -23,7 +23,7 @@ SRC = sys.argv[1] if len(sys.argv) > 1 else "data/pilot"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "results/method_ii.jsonl"
 FACTS = os.environ.get("EVAL_FACTS")
 RESUME = bool(os.environ.get("EVAL_RESUME"))
-DTYPE = os.environ.get("EVAL_DTYPE", "fp16")
+DTYPE = os.environ.get("EVAL_DTYPE", "bf16")
 
 
 def fake_detection(name, i):
