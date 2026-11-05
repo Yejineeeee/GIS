@@ -20,10 +20,10 @@
 
 비교하는 방식
     C   한 점 조회: 추정 좌표 한 점의 용도를 그대로 단정한다 (제안서 입력 조건 C)
-    D   지금 반경 + 판정: transform.py 반경으로 조회하고 src/pipeline/verdict.py 로 판정
-    D+  각도 항을 넣은 반경 + 판정: 반경에 2 x sqrt((d sψ)^2 + (h sθ / sin^2 dep)^2
-        + (sh / tan dep)^2) 를 더한다 (docs/simulator.md 11/04). transform.py 는 고치지
-        않고 이 도구 안에서만 계산한다
+    D   자세 오차 항 없는 반경 + 판정: transform.to_position(attitude_terms=False) 반경으로
+        조회하고 src/pipeline/verdict.py 로 판정 (11주차 전 반경)
+    D+  자세 오차 항을 넣은 반경 + 판정: transform.to_position 기본값. 반경에
+        2 x sqrt((d sψ)^2 + (h sθ / sin^2 dep)^2 + (sh / tan dep)^2) 가 더해진다
 
 채점 (정답 = 실제 발화점의 용도)
     확정  1순위 용도가 정답이면 맞는 확정, 아니면 틀린 단정
@@ -92,13 +92,6 @@ def frame_offsets():
                     "V0": (v0["x"] - tx, v0["y"] - ty, v0["err_m"]),
                     "V2": (v2["x"] - tx, v2["y"] - ty, v2["err_m"])})
     return out
-
-
-def wider_radius(radius, dist, alt, dep_deg):
-    s_psi, s_th, s_h = math.radians(NOISE["heading"]), math.radians(NOISE["pitch"]), NOISE["alt"]
-    dep = math.radians(max(dep_deg, 1.0))
-    add = math.sqrt((dist * s_psi) ** 2 + (alt * s_th / math.sin(dep) ** 2) ** 2 + (s_h / math.tan(dep)) ** 2)
-    return radius + 2 * add
 
 
 def score(kind, land_use, truth):
@@ -173,6 +166,7 @@ def main():
             frame = {"image_size": {"width": W, "height": H}, "camera": noisy}
             try:
                 pos, info = to_position(frame, det, dem=dem)
+                old, _ = to_position(frame, det, dem=dem, attitude_terms=False)
             except ValueError:
                 bad = True
                 break
@@ -182,9 +176,7 @@ def main():
             res = {"err_m": round(err, 1), "C": "틀린 단정" if one != truth else "맞는 확정"}
             if one is None:
                 res["C"] = "미확정"
-            for name, r in (("D", pos["error_radius_m"]),
-                            ("D+", wider_radius(pos["error_radius_m"], info["ground_offset_m"],
-                                                info["alt_agl_m"], info["depression_deg"]))):
+            for name, r in (("D", old["error_radius_m"]), ("D+", pos["error_radius_m"])):
                 lu, _, qi = query(geo, pos["lat"], pos["lon"], r, n_points=a.points)
                 kind, _ = judge(lu, r, qi["landuse_coverage"], info["shallow"])
                 res[name] = score(kind, lu, truth)
