@@ -1,0 +1,4 @@
+﻿frame,scene,smoke_present,smoke_color,spread,flame_visible,terrain,파이프라인_초,파이프라인_입력토큰,origin,building_under_smoke,cue,출처_초,출처_입력토큰
+sim_0007,fire_nb,True,검은색,넓음,False,산림,47.4,1098,산림,False,연기 아래 나무가 보임,47.0,1129
+sim_0008,bldA_nb,True,검은색,보통,False,산림,46.8,1098,건물,True,연기 아래 건물이 보임,92.8,1129
+sim_0009,bldB_nb,True,검은색,보통,False,산림,11.0,1098,산림,False,연기 아래 나무가 보임,71.8,1129
