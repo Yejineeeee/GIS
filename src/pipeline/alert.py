@@ -99,6 +99,7 @@ class Describer:
     def __init__(self, vlm, pub, sync=False):
         self.vlm, self.pub, self.sync = vlm, pub, sync
         self.done = []                 # (alert_id, 걸린 ms, 문장 또는 실패 사유)
+        self.yield_to = None           # 참을 돌려주는 동안 설명을 미룬다 (같은 GPU 의 검증기 먼저)
         self.q = queue.Queue()
         if not sync:
             self.th = threading.Thread(target=self._loop, daemon=True)
@@ -135,6 +136,8 @@ class Describer:
             self.pub.note(alert_id=aid, stage="설명", error="사진을 못 찾음 (--frames 확인)")
             print(f"     {aid} 설명 건너뜀: 사진을 못 찾음")
             return
+        while self.yield_to and not self.sync and self.yield_to():
+            time.sleep(0.1)
         observed, vlm_ms, raw = self.vlm.observe(str(image_path) if image_path else None)
         if observed is None:
             self.pub.note(alert_id=aid, stage="설명", error=f"스키마 실패: {raw[:200]}")
