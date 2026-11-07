@@ -151,7 +151,7 @@ def main():
                 fp_neg += len(ds)
         row = {"conf": c, "iou": st.mean(ious), "recall_img": hit_img / n_pos,
                "recall_inst50": inst5 / inst, "recall_inst25": inst25 / inst,
-               "alarm_neg": alarm / n_neg, "fp_in_pos": fp_pos, "fp_in_neg": fp_neg,
+               "alarm_neg": alarm / n_neg if n_neg else 0.0, "fp_in_pos": fp_pos, "fp_in_neg": fp_neg,
                "n_pos": n_pos, "n_neg": n_neg, "n_inst": inst,
                "by_class": {k: f"{v[0]}/{v[1]}" for k, v in by_cls.items()}}
         rows.append(row)
