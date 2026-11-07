@@ -117,6 +117,19 @@ def circle_points(cx, cy, r, n=N_POINTS):
 
 
 # ---------- 데이터 ----------
+GRID_M = 100.0  # 건물·용도지역을 미리 나눠 둘 칸 크기 (속도용, 결과는 같음)
+
+
+def _grid(bboxes):
+    """다각형 bbox 목록 → {(칸 x, 칸 y): [다각형 번호, ...]} (번호 순)."""
+    g = {}
+    for i, (x0, y0, x1, y1) in enumerate(bboxes):
+        for gx in range(int(x0 // GRID_M), int(x1 // GRID_M) + 1):
+            for gy in range(int(y0 // GRID_M), int(y1 // GRID_M) + 1):
+                g.setdefault((gx, gy), []).append(i)
+    return g
+
+
 class GeoData:
     def __init__(self, landuse_path, buildings_path=None, dem_paths=None):
         self.landuse = []      # (name, rings, bbox)
@@ -130,17 +143,63 @@ class GeoData:
                 for rings in _polys(f["geometry"]):
                     self.buildings.append((rings, _bbox(rings)))
         self.dem = Dem(dem_paths) if dem_paths else None
+        # 속도: 칸마다 걸치는 다각형 번호를 미리 적어 두고, 근처 칸만 본다
+        self._lu_grid = _grid([b for _, _, b in self.landuse])
+        self._bd_grid = _grid([b for _, b in self.buildings])
 
     def landuse_at(self, x, y):
-        for name, rings, (x0, y0, x1, y1) in self.landuse:
+        for i in self._lu_grid.get((int(x // GRID_M), int(y // GRID_M)), ()):
+            name, rings, (x0, y0, x1, y1) = self.landuse[i]
             if x0 <= x <= x1 and y0 <= y <= y1 and _inside(x, y, rings):
                 return name
         return None
 
+    def landuse_lookup(self, cx, cy, r):
+        """원 하나를 조회할 때 쓰는 빠른 landuse_at (결과는 같음).
+        원의 위아래 범위에 걸치는 변만 남겨, 지점마다 다각형 전체 변을 보지 않게 한다."""
+        ymin, ymax = cy - r, cy + r
+        ids = set()
+        for gx in range(int((cx - r) // GRID_M), int((cx + r) // GRID_M) + 1):
+            for gy in range(int(ymin // GRID_M), int(ymax // GRID_M) + 1):
+                ids.update(self._lu_grid.get((gx, gy), ()))
+        cands = []
+        for i in sorted(ids):
+            name, rings, bbox = self.landuse[i]
+            edges = []
+            for ring in rings:
+                n = len(ring)
+                for k in range(n):
+                    x1, y1 = ring[k][0], ring[k][1]
+                    x2, y2 = ring[(k + 1) % n][0], ring[(k + 1) % n][1]
+                    if max(y1, y2) > ymin and min(y1, y2) <= ymax:
+                        edges.append((x1, y1, x2, y2))
+            cands.append((name, bbox, edges))
+
+        def at(x, y):
+            for name, (x0, y0, x1, y1), edges in cands:
+                if x0 <= x <= x1 and y0 <= y <= y1:
+                    inside = False
+                    for ax, ay, bx, by in edges:
+                        if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
+                            inside = not inside
+                    if inside:
+                        return name
+            return None
+        return at
+
+    def _near_ids(self, x, y, d):
+        """(x, y)에서 d 안에 걸칠 수 있는 건물 번호 (근처 칸 후보, 번호 순)."""
+        ids = set()
+        for gx in range(int((x - d) // GRID_M), int((x + d) // GRID_M) + 1):
+            for gy in range(int((y - d) // GRID_M), int((y + d) // GRID_M) + 1):
+                ids.update(self._bd_grid.get((gx, gy), ()))
+        return sorted(ids)
+
     def buildings_near(self, x, y, d):
         """(x, y)에서 d m 안에 있는 건물 목록."""
         out = []
-        for rings, (x0, y0, x1, y1) in self.buildings:
+        for i in self._near_ids(x, y, d):
+            rings, (x0, y0, x1, y1) = self.buildings[i]
             if x0 - d <= x <= x1 + d and y0 - d <= y <= y1 + d and _dist_to_poly(x, y, rings) <= d:
                 out.append(rings)
         return out
@@ -152,8 +211,9 @@ def query(geo, lat, lon, radius_m, n_points=N_POINTS):
     pts = circle_points(cx, cy, radius_m, n_points)
 
     counts = {}
+    landuse_at = geo.landuse_lookup(cx, cy, radius_m)
     for x, y in pts:
-        name = geo.landuse_at(x, y)
+        name = landuse_at(x, y)
         if name is not None:
             counts[name] = counts.get(name, 0) + 1
     hit = sum(counts.values())
@@ -165,9 +225,11 @@ def query(geo, lat, lon, radius_m, n_points=N_POINTS):
 
     if geo.buildings:
         evidence["buildings_in_radius"] = len(geo.buildings_near(cx, cy, radius_m))
-        near_cands = geo.buildings_near(cx, cy, radius_m + NEAR_BUILDING_M)
+        near_cands = [(r, _bbox(r)) for r in geo.buildings_near(cx, cy, radius_m + NEAR_BUILDING_M)]
+        d = NEAR_BUILDING_M
         near = sum(1 for x, y in pts
-                   if any(_dist_to_poly(x, y, rings) <= NEAR_BUILDING_M for rings in near_cands))
+                   if any(x0 - d <= x <= x1 + d and y0 - d <= y <= y1 + d and _dist_to_poly(x, y, r) <= d
+                          for r, (x0, y0, x1, y1) in near_cands))
         info["near_building_ratio"] = round(near / len(pts), 4)
 
     if geo.dem:
