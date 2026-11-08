@@ -89,6 +89,115 @@ def _near(observed, alert):
     return ". ".join(parts) if parts else None
 
 
+# ---------- 관제 카드: 제목 / 판정 / 위험 / 행동 네 줄 ----------
+# 숫자(반경, 경사, 비율)는 대시보드 카드 칸이 보여 주므로, 문장은 "무슨 상황이고 다음에
+# 무엇을 할지"를 말한다. 판정 규칙(src/vlm/verify.py)은 네 줄을 이어 붙인 글로 검사한다.
+
+def _kind(name):
+    """용도지역 이름 → 녹지 / 시가지 / 기타."""
+    if not name:
+        return "기타"
+    if any(k in name for k in ("녹지", "보전", "농림", "자연환경")):
+        return "녹지"
+    if any(k in name for k in ("주거", "상업", "공업")):
+        return "시가지"
+    return "기타"
+
+
+def _share(land, kind):
+    return sum(u.get("ratio") or 0 for u in land if _kind(u.get("name")) == kind)
+
+
+def _m(v):
+    """거리를 10m 단위로. 오차가 수십 m 라 그보다 잘게 쓰지 않는다."""
+    return f"약 {max(10, int(round(v / 10.0)) * 10)}m"
+
+
+def card(observed, alert, site=None):
+    """알람 하나를 관제 카드 네 줄로 만든다. {"title", "verdict", "risk", "action"}.
+
+    site 는 지역 이름(대시보드 --site-name). 없으면 제목에서 뺀다.
+    evidence 에 nearest_building_m(가장 가까운 건물까지), residential_m(주거지역 경계까지)이
+    있으면 위험 줄에 거리를 쓰고, 없으면 오차 반경 안의 용도 비율과 건물 수로 쓴다.
+    """
+    observed = observed or {}
+    land = [u for u in (alert.get("land_use") or [])
+            if u.get("name") and u["name"] not in ("없음", "미지정")]
+    first = land[0]["name"] if land else None
+    second = land[1]["name"] if len(land) > 1 else None
+    k1 = _kind(first)
+    verdict = alert.get("location_verdict")
+    radius = (alert.get("position") or {}).get("error_radius_m")
+    ev = alert.get("evidence") or {}
+    n_bd = ev.get("buildings_in_radius")
+    urban = _share(land, "시가지")
+    where = f" · {site}" if site else ""
+
+    # 제목
+    if verdict == "확정" and k1 == "녹지":
+        title = f"산불{where}"
+    elif verdict == "확정" and k1 == "시가지":
+        title = f"화재 의심{where}"
+    else:
+        title = f"연기 탐지{where}"
+    if observed.get("flame_visible"):
+        title += " · 불꽃 보임"
+
+    # 판정
+    if verdict == "확정":
+        vline = f"{first}에서 발생" if first else "위치 확인됨"
+    elif verdict == "모호":
+        if first and second:
+            vline = f"{first}{_josa(first, '과', '와')} {second} 중 하나로 보임"
+        elif first:
+            vline = f"{first}{_josa(first, '으로', '로')} 보이나 확인이 필요"
+        else:
+            vline = "용도를 특정하기 어려움"
+    else:
+        vline = "위치 불확실, 용도 판단 보류"
+
+    # 위험
+    risk = [f"오차 반경 {radius}m"] if radius else []
+    near_bd, near_res = ev.get("nearest_building_m"), ev.get("residential_m")
+    if verdict == "미확정":
+        # 추정점을 믿기 어려우므로 추정점에서 잰 거리는 쓰지 않는다
+        near_bd = near_res = None
+        if n_bd:
+            risk.append(f"오차 범위 안 건물 {n_bd}동")
+    if near_res is not None and k1 != "시가지":
+        risk.append("주거지역과 맞닿음" if near_res == 0 else f"주거지역 {_m(near_res)}")
+    if near_bd is not None:
+        risk.append("건물과 겹침" if near_bd == 0 else f"가장 가까운 건물 {_m(near_bd)}")
+    if near_bd is None and verdict != "미확정":
+        if k1 != "시가지" and urban >= 0.05:
+            risk.append(f"반경 안 {int(round(urban * 100))}%가 시가지")
+        elif n_bd:
+            risk.append(f"반경 안 건물 {n_bd}동")
+    rline = " · ".join(risk) if risk else "주변 정보 없음"
+
+    # 다음 행동
+    homes_near = (near_res is not None and near_res <= 100) or urban >= 0.05 or bool(n_bd)
+    if verdict == "미확정":
+        aline = "접근해 위치 확인 필요"
+    elif verdict == "모호":
+        aline = "위치를 좁히면 판정 가능"
+        if urban >= 0.05 or _kind(second) == "시가지":
+            aline += " · 주거지 확산 대비"
+    elif k1 == "시가지":
+        aline = "건물 화재 가능 · 119 통보 검토"
+    elif k1 == "녹지" and homes_near:
+        aline = "확산 시 민가 위험 · 출동 검토"
+    else:
+        aline = "출동 검토"
+
+    return {"title": title, "verdict": vline, "risk": rline, "action": aline}
+
+
+def card_text(c):
+    """카드 네 줄을 한 글로 (판정 규칙 검사와 로그용)."""
+    return "\n".join(c[k] for k in ("title", "verdict", "risk", "action"))
+
+
 def build(observed, alert, use_vlm_facts=False):
     """알람 설명 문장을 만든다.
 

@@ -48,9 +48,20 @@
 <script src="https://cdn.jsdelivr.net/npm/cesium@1.124.0/Build/Cesium/Cesium.js"></script>
 <script src="token.js" onerror="void 0"></script>
 <script>
-const SITE = { lon: 128.906239, lat: 37.736790 };     // 모래고개입구
-// 연기를 피울 자리. 이 좌표가 정답이다. 탐지가 낸 좌표와 비교한다.
-const FIRE = { lon: 128.9089, lat: 37.7331 };
+// 시연 지역. 주소 뒤에 ?site=jagok 를 붙이면 자곡동으로 연다 (docs/demo_area.md).
+// FIRE 는 연기를 피울 자리이고 이 좌표가 정답이다. 탐지가 낸 좌표와 비교한다.
+// 자곡동 발화점은 자연녹지(실제 활엽수림) 안, 주거지역에서 62m, 반경 50m 안 건물 0채다.
+const SITES = {
+  moraegogae: { site: { lon: 128.906239, lat: 37.736790 }, fire: { lon: 128.9089, lat: 37.7331 },
+                buildings: "buildings.geojson", tag: "" },
+  jagok:      { site: { lon: 127.1017, lat: 37.4716 }, fire: { lon: 127.101707, lat: 37.470338 },
+                buildings: "buildings_jagok.geojson", tag: "jagok" },
+};
+const SITE_KEY = new URLSearchParams(location.search).get("site") || "moraegogae";
+const CFG = SITES[SITE_KEY] || SITES.moraegogae;
+const SITE = CFG.site;
+const FIRE = CFG.fire;
+const SAVE_Q = CFG.tag ? "?site=" + CFG.tag : "";     // 저장 폴더를 지역별로 나눈다
 const TOKEN = (window.CESIUM_ION_TOKEN || "").trim();
 
 let viewer, smokeEntity = null, flying = false, aglOffset = 120;
@@ -141,7 +152,7 @@ async function toggleBuildings() {
   }
   btn.textContent = "읽는 중"; btn.disabled = true;
   try {
-    const ds = await Cesium.GeoJsonDataSource.load("buildings.geojson", {
+    const ds = await Cesium.GeoJsonDataSource.load(CFG.buildings, {
       clampToGround: false });
     for (const e of ds.entities.values) {
       if (!e.polygon) continue;
@@ -447,7 +458,7 @@ async function shot(D, h, bearing, target) {
     sweep: { D: D, h: h, bearing: bearing, ground_m: +g.toFixed(1) },
   };
   if (target) meta.scene = { id: target.id || null, lat: T.lat, lon: T.lon };
-  const res = await fetch("/frame", {
+  const res = await fetch("/frame" + SAVE_Q, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ png: png, meta: meta }) });
   return { ok: true, saved: (await res.json()).saved, D: D, h: h,
@@ -507,7 +518,7 @@ async function terrainGrid(halfM, stepM) {
   const body = { lat0: FIRE.lat, lon0: FIRE.lon, half_m: halfM, step_m: stepM, n: n,
                  m_per_deg_lat: mLat, m_per_deg_lon: mLon,
                  source: "Cesium World Terrain", heights: heights };
-  const res = await fetch("/terrain", {
+  const res = await fetch("/terrain" + SAVE_Q, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body) });
   return { n: n, points: heights.length, saved: (await res.json()).saved };

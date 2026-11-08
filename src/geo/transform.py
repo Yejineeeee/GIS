@@ -17,6 +17,8 @@
                  + (각도를 모를 때) 고도 x tan(최대 기울기)
                  + (기수 방향을 모를 때) 화면 중심에서 떨어진 거리
                  + 연기 밑동 높이 / tan(내려다보는 각)   (밑동이 지면보다 떠 있을 수 있음)
+                 + 2 x sqrt((거리 x 기수 오차)^2 + (고도 x 각도 오차 / sin^2 내려다보는 각)^2
+                            + (고도 오차 / tan 내려다보는 각)^2)   (카메라 자세 오차)
     5. 내려다보는 각이 얕으면(기본 15도 미만) info.shallow를 true로 둔다.
        이때는 위치를 믿기 어려우므로 판정에서 미확정으로 두는 것을 권한다.
 
@@ -26,6 +28,14 @@
 변경 (8주차): 시뮬레이터로 찾은 두 오차를 고침
     - 고도 기준: 해발·타원체 고도를 지면 기준으로 바꿈 (전에는 가정값 120m로 넘어감)
     - 연기 높이: 대표 픽셀을 무게중심에서 맨 아래로 바꾸고, 밑동 높이 항과 얕은 각도 표시를 추가
+
+변경 (11주차): 카메라 자세 오차 항 추가
+    시뮬레이터 프레임에 자세 잡음(기수 2도, 카메라 각도 1도, 고도 2m)을 섞어 보니
+    정답이 반경 안에 드는 비율이 200m 72%, 800m 18%였다(docs/simulator.md 11/04).
+    기수 오차는 거리에 비례해 옆으로, 각도 오차는 얕은 각도에서 거리 방향으로 커지는데
+    반경에 이 항이 없었다. 2 시그마로 더하면 포함률이 89~100%가 되고, 발화점 600곳
+    비교에서 200~400m 틀린 단정이 12.5%에서 5.7%로 준다(docs/verdict_compare.md).
+    attitude_terms=False 로 부르면 전처럼 계산한다(비교용).
 """
 import argparse
 import json
@@ -42,6 +52,10 @@ MAX_TILT_DEG = 30.0        # 촬영 각도를 모를 때 가정하는 최대 기
 HFOV_DEFAULT_DEG = math.degrees(2 * math.atan(13.2 / (2 * 8.8)))  # gsd.md 예시 카메라, 약 73.7도
 SMOKE_BASE_M = 5.0         # 폴리곤 맨 아래가 지면보다 떠 있을 수 있는 높이(가정)
 MIN_DEPRESSION_DEG = 15.0  # 이보다 얕게 내려다보면 위치를 믿기 어렵다고 표시
+HEADING_SIGMA_DEG = 2.0    # 기수 방향 오차 1 시그마(가정, docs/simulator.md 자세 잡음 '보통')
+PITCH_SIGMA_DEG = 1.0      # 카메라 각도 오차 1 시그마(가정)
+ALT_SIGMA_M = 2.0          # 고도 오차 1 시그마(가정)
+ATTITUDE_K = 2.0           # 자세 오차 항을 몇 시그마로 더할지 (2 = 약 95%)
 BOTTOM_BAND = 0.05         # 폴리곤 높이의 아래 5% 안 점들의 가운데를 밑동으로 씀
 EARTH_R = 6378137.0
 
@@ -132,8 +146,22 @@ def agl_altitude(cam, dem, geoid_m, alt_default, notes):
     return alt_default, None
 
 
+def attitude_term(dist, alt, dep_deg, heading_known=True, pitch_known=True):
+    """카메라 자세 오차가 지상에서 만드는 위치 오차(m, ATTITUDE_K 시그마).
+
+    기수 오차는 거리에 비례해 옆으로 밀고, 카메라 각도와 고도 오차는 거리 방향으로
+    민다. 얕게 내려다볼수록 거리 방향 항이 빠르게 커진다. 기수나 각도를 모르면 그
+    항은 이미 다른 항(화면 중심 거리, 최대 기울기)으로 들어가므로 뺀다.
+    """
+    dep = math.radians(max(dep_deg, 1.0))
+    side = dist * math.radians(HEADING_SIGMA_DEG) if heading_known else 0.0
+    along = alt * math.radians(PITCH_SIGMA_DEG) / math.sin(dep) ** 2 if pitch_known else 0.0
+    height = ALT_SIGMA_M / math.tan(dep)
+    return ATTITUDE_K * math.sqrt(side ** 2 + along ** 2 + height ** 2)
+
+
 def to_position(frame, det, alt_default=ALT_DEFAULT_M, max_tilt=MAX_TILT_DEG,
-                dem=None, geoid_m=None):
+                dem=None, geoid_m=None, attitude_terms=True):
     """탐지 하나를 알람 position으로 바꾼다. (position, info)를 돌려준다."""
     cam = frame.get("camera") or {}
     size = frame["image_size"]
@@ -200,6 +228,8 @@ def to_position(frame, det, alt_default=ALT_DEFAULT_M, max_tilt=MAX_TILT_DEG,
     else:
         lat, lon = cam["lat"], cam["lon"]
         radius += dist
+    if attitude_terms:
+        radius += attitude_term(dist, alt, dep, heading_known, pitch_known)
     if shallow:
         notes.append(f"내려다보는 각 {dep:.1f}도로 얕음: 위치를 믿기 어려워 미확정 권장")
 

@@ -17,6 +17,7 @@ import json
 import os
 import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 
 ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8712
@@ -38,9 +39,15 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        if self.path not in ("/frame", "/terrain"):
+        # ?site=jagok 이면 frames_jagok/, terrain_jagok.json 에 따로 저장한다
+        path, _, query = self.path.partition("?")
+        site = "".join(ch for ch in parse_qs(query).get("site", [""])[0] if ch.isalnum())
+        if path not in ("/frame", "/terrain"):
             self.send_error(404)
             return
+        self.path = path
+        frames = FRAMES + ("_" + site if site else "")
+        terrain_name = f"terrain_{site}.json" if site else "terrain.json"
         n = int(self.headers.get("Content-Length", 0))
         try:
             body = json.loads(self.rfile.read(n).decode("utf-8"))
@@ -50,22 +57,22 @@ class Handler(SimpleHTTPRequestHandler):
 
         if self.path == "/terrain":
             # 지형 높이 격자 (index.html 의 terrainGrid). 한 벌만 두고 덮어쓴다
-            with open(os.path.join(ROOT, "terrain.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(ROOT, terrain_name), "w", encoding="utf-8") as f:
                 json.dump(body, f)
-            self._json({"saved": "terrain.json"})
+            self._json({"saved": terrain_name})
             return
 
-        os.makedirs(FRAMES, exist_ok=True)
-        i = len([f for f in os.listdir(FRAMES) if f.endswith(".png")])
+        os.makedirs(frames, exist_ok=True)
+        i = len([f for f in os.listdir(frames) if f.endswith(".png")])
         stem = f"sim_{i:04d}"
         png = body.get("png", "")
         if png.startswith("data:"):
             png = png.split(",", 1)[1]
-        with open(os.path.join(FRAMES, stem + ".png"), "wb") as f:
+        with open(os.path.join(frames, stem + ".png"), "wb") as f:
             f.write(base64.b64decode(png))
         meta = body.get("meta", {})
         meta["image"] = stem + ".png"
-        with open(os.path.join(FRAMES, stem + ".json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(frames, stem + ".json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
         self._json({"saved": stem})

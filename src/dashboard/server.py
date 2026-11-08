@@ -170,8 +170,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, b"forbidden", "text/plain")
             return self._file(target, cache=True)
         if p == "/api/config":
-            return self._json({"center": c["center"], "vworld_key": c["vworld_key"],
-                               "has_landuse": c["landuse"] is not None})
+            return self._json({"center": c["center"], "vworld_key": c["vworld_key"], "site_name": c.get("site_name"),
+                               "has_landuse": c["landuse"] is not None, "report": c.get("report")})
         if p == "/api/alerts":
             return self._json(read_state(c["out"], c["frames"]))
         if p == "/api/landuse":
@@ -192,6 +192,12 @@ def main():
     ap.add_argument("--frames", help="사진 폴더 (탐지 JSON에 파일 이름만 있을 때)")
     ap.add_argument("--geo-dir", help="landuse_5179.geojson 이 있는 폴더 (용도지역을 지도에 그림)")
     ap.add_argument("--port", type=int, default=8800)
+    ap.add_argument("--site-name", help="화면 위 지역 이름 (기본: 모래고개입구 · 강원 강릉시 구정면)")
+    ap.add_argument("--center", type=float, nargs=2, metavar=("LAT", "LON"),
+                    help="처음 지도 가운데 (기본: 모래고개입구. 자곡동은 37.4703 127.1017)")
+    ap.add_argument("--report", type=float, nargs=2, metavar=("LAT", "LON"),
+                    help="신고 지점. 주면 지도에 신고 지점과 신고 범위를 그린다 (신고 시나리오 시연용)")
+    ap.add_argument("--report-radius", type=float, default=400, help="신고 범위 반경 m (기본 400)")
     a = ap.parse_args()
 
     lu = None
@@ -199,7 +205,8 @@ def main():
         lu = landuse_4326(Path(a.geo_dir) / "landuse_5179.geojson")
         print(f"[준비] 용도지역 폴리곤 {len(lu['features'])}개")
     Handler.cfg = {"out": a.out, "frames": a.frames, "landuse": lu,
-                   "center": list(SITE), "vworld_key": os.environ.get("VWORLD_KEY", "").strip() or None}
+                   "center": list(a.center or SITE), "site_name": a.site_name, "vworld_key": os.environ.get("VWORLD_KEY", "").strip() or None,
+                   "report": {"lat": a.report[0], "lon": a.report[1], "radius_m": a.report_radius} if a.report else None}
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"[대시보드] http://localhost:{a.port}  (알람 폴더: {Path(a.out) / 'alerts'})")
     print("           끄려면 Ctrl+C")
