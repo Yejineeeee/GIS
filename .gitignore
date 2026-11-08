@@ -33,3 +33,7 @@ Thumbs.db
 sim/token.js
 sim/frames/
 sim/terrain.json
+
+sim/frames_*/
+sim/vworld_key.js
+sim/test3d.html

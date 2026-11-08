@@ -211,6 +211,30 @@ CSV는 엑셀에서 한글이 깨지지 않도록 BOM을 붙여 저장한다. �
 이 비교는 1km 칸 하나씩만 본 것이다. 토지피복지도는 2021년 것이라 그 뒤 개발은 들어가지
 않았다.
 
+## 자곡동으로 확정 (11/07)
+
+팀에서 시연 지역을 **서울 강남구 자곡동**으로 정했다. 처음 보여 주려던 상황(숲과 주거지가
+맞닿은 곳의 산불)이 실제 지형에 있고, V-World 3D 지도로 건물과 지형이 사진 질감 그대로
+나와 시뮬레이터 화면이 실제와 가깝다.
+
+- 발화점 기본값: 127.101707, 37.470338 (자연녹지, 실제 활엽수림 안. 주거지역에서 62m)
+- 지리 자료는 `data/geo_jagok/` 에 받는다. 공개 DEM 대신 시뮬레이터 지형 격자
+  (`sim/terrain_jagok3d.json`)를 쓴다
+
+```
+python tools/fetch_landuse.py data/geo_jagok 127.0757 37.4466 127.1277 37.4966
+python tools/fetch_buildings.py data/geo_jagok 127.0757 37.4466 127.1277 37.4966
+python tools/make_sim_buildings.py data/geo_jagok/buildings_4326.geojson sim/buildings_jagok.geojson --fire 127.101707 37.470338
+```
+
+바꾸면서 남은 일
+
+- 3.5 판정 임계값을 자곡동 자료로 다시 계산한다
+- 대시보드 지도 가운데와 지역 이름을 자곡동으로 바꾼다
+- 파이프라인(run.py)이 DEM 대신 시뮬레이터 지형 격자를 쓸 수 있게 한다(밑동 가림 PR 에서 `--sim-terrain`)
+
+시뮬레이터 쓰는 법과 신고 시나리오는 `docs/simulator.md` 의 "자곡동 V-World 3D" 에 있다.
+
 ## 한계
 
 **1. 용도지역 폴리곤이 덮지 않는 곳이 많다. (해소)** 처음에는 모래고개입구 둘레

@@ -113,9 +113,9 @@ def main():
     from PIL import Image
     from detect import Detector
     ter = None
-    if (ROOT / "sim" / "terrain.json").is_file():
-        from sim_terrain import SimTerrain
-        ter = SimTerrain(str(ROOT / "sim" / "terrain.json"))
+    from sim_terrain import SimTerrain, sim_paths
+    if sim_paths()[1].is_file():
+        ter = SimTerrain(str(sim_paths()[1]))
     det = Detector(a.weights)
     ver = Verifier()
     out = Path(a.out)

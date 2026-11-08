@@ -46,7 +46,7 @@ sys.path.insert(0, str(ROOT / "src" / "pipeline"))
 from transform import to_position, move  # noqa: E402
 from query import GeoData, query, to_5179  # noqa: E402
 from dem import Dem  # noqa: E402
-from sim_terrain import SimTerrain  # noqa: E402
+from sim_terrain import SimTerrain, sim_paths  # noqa: E402
 from verdict import judge  # noqa: E402
 
 BBOX = (128.880, 37.712, 128.932, 37.762)   # 시연 지역 (docs/threshold.md)
@@ -70,13 +70,14 @@ def dep_of(dz, D):
 
 def frame_offsets():
     """시뮬레이터 프레임마다 (거리, 조준 각 차이, V0 와 V2 탐지 픽셀의 정답 픽셀 대비 dx, dy, 오차)."""
-    ter = SimTerrain(str(ROOT / "sim" / "terrain.json"))
+    frames_dir, terrain, verify_dir = sim_paths()
+    ter = SimTerrain(str(terrain))
     out = []
-    for l in open(ROOT / "runs/verify/verify.jsonl", encoding="utf-8"):
+    for l in open(verify_dir / "verify.jsonl", encoding="utf-8"):
         r = json.loads(l)
         if not r["dets"]:
             continue
-        meta = json.load(open(ROOT / "sim/frames" / r["image"].replace(".png", ".json"), encoding="utf-8"))
+        meta = json.load(open(frames_dir / r["image"].replace(".png", ".json"), encoding="utf-8"))
         c, W, H = meta["camera"], meta["image_size"]["width"], meta["image_size"]["height"]
         t = meta["truth"]
         fg = ter.height(*to_5179(t["fire_lon"], t["fire_lat"]))
@@ -107,6 +108,10 @@ def main():
     ap.add_argument("landuse")
     ap.add_argument("--dem", nargs="+", default=[str(ROOT / "data/geo_moraegogae/37808.img"),
                                                   str(ROOT / "data/geo_moraegogae/37804.img")])
+    ap.add_argument("--sim-dem", action="store_true",
+                    help="DEM 대신 시뮬레이터 지형 격자를 쓴다 (SIM_SITE 의 terrain). DEM 이 없는 지역용")
+    ap.add_argument("--bbox", type=float, nargs=4, metavar=("LON0", "LAT0", "LON1", "LAT1"),
+                    help="발화점을 뽑을 범위 (기본: 모래고개입구 시연 지역)")
     ap.add_argument("--n", type=int, default=600, help="사례 수")
     ap.add_argument("--points", type=int, default=600, help="반경 조회 지점 수")
     ap.add_argument("--seed", type=int, default=42)
@@ -115,15 +120,16 @@ def main():
 
     rng = random.Random(a.seed)
     geo = GeoData(a.landuse)
-    dem = Dem(a.dem)
+    dem = SimTerrain(str(sim_paths()[1])) if a.sim_dem else Dem(a.dem)
     frames = frame_offsets()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    lat0, lat1 = BBOX[1], BBOX[3]
-    lon0, lon1 = BBOX[0], BBOX[2]
+    box = a.bbox or BBOX
+    lat0, lat1 = box[1], box[3]
+    lon0, lon1 = box[0], box[2]
     mlat = MARGIN_M / 111320
-    mlon = MARGIN_M / (111320 * math.cos(math.radians(37.737)))
+    mlon = MARGIN_M / (111320 * math.cos(math.radians((lat0 + lat1) / 2)))
 
     recs = []
     tries = 0
