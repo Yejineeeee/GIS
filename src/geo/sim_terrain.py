@@ -57,6 +57,16 @@ class SimTerrain:
     def _at(self, i, j):
         return self.h[i * self.n + j]
 
+    cell = None          # query.py 가 dem_resolution_m 에 쓴다
+
+    def slope_deg(self, x, y, d=30.0):
+        """지면 경사(도). 둘레 d m 높이 차로 어림한다."""
+        hs = [self.height(x + dx, y + dy) for dx, dy in ((d, 0), (-d, 0), (0, d), (0, -d))]
+        if any(h is None for h in hs):
+            return None
+        gx, gy = (hs[0] - hs[1]) / (2 * d), (hs[2] - hs[3]) / (2 * d)
+        return math.degrees(math.atan(math.hypot(gx, gy)))
+
     def height(self, x, y):
         lon, lat = self._lonlat(x, y)
         north = (lat - self.lat0) * self.m_lat + self.half
