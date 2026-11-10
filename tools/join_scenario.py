@@ -36,8 +36,8 @@ def main():
             meta["video_id"] = "SCENARIO_VW3D"
             meta.setdefault("sweep", {})["D"] = round(D, 1)
             ts = (meta.get("search") or meta.get("approach") or {}).get("t_s", 0)
-            # 영상 자막은 OpenCV 로 그려서 한글이 안 된다
-            meta["caption"] = f"{cap or 'APPROACH'}  t={ts:.0f}s  fire {D:.0f} m"
+            meta["stage"] = cap or "APPROACH"          # 자막 단계 (tools/drone_overlay.py)
+            meta["caption"] = f"{meta['stage']}  t={ts:.0f}s  fire {D:.0f} m"
             shutil.copy(png, out / f"sim_{n:04d}.png")
             json.dump(meta, open(out / f"sim_{n:04d}.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
             n += 1

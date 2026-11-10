@@ -13,7 +13,8 @@
     python tools/make_demo_video.py results/pipeline_approach3 results/demo_replay \
         sim/frames_approach3 results/demo_approach.mp4
 
-탐지가 없는 앞쪽 프레임은 알람 없이 드론 화면만 보인다.
+탐지가 없는 앞쪽 프레임은 알람 없이 드론 화면만 보인다. 드론 화면의 탐지 윤곽과 자막은
+tools/drone_overlay.py 가 그린다. 대시보드 없이 드론 화면만 미리 보려면 그 파일을 직접 돌린다.
 """
 import argparse
 import json
@@ -27,6 +28,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from replay_alerts import steps  # noqa: E402
+from drone_overlay import Overlay  # noqa: E402
 
 CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
@@ -35,11 +37,6 @@ def shoot(url, out, w=1280, h=820):
     subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
                     f"--window-size={w},{h}", "--virtual-time-budget=5000",
                     f"--screenshot={out}", url], check=True, capture_output=True)
-
-
-def put_text(img, text, org, scale=0.9):
-    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), 4, cv2.LINE_AA)
-    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 2, cv2.LINE_AA)
 
 
 def main():
@@ -56,6 +53,7 @@ def main():
     shots = dst / "shots"
     shots.mkdir(parents=True, exist_ok=True)
     S = steps(src)
+    ov = Overlay(src)          # 드론 화면의 탐지 윤곽과 한글 자막 (tools/drone_overlay.py)
     by_frame = {k: i for i, (k, _, _) in enumerate(S)}
     pngs = sorted(frames.glob("sim_*.png"))
 
@@ -75,9 +73,8 @@ def main():
             shot = shots / f"dash_{k:04d}.png"
             shoot(a.url, str(shot.resolve()))
             last_dash = cv2.imread(str(shot))
-        drone = cv2.imread(str(png))
+        drone = ov.draw(cv2.imread(str(png)), meta)
         drone = cv2.resize(drone, (int(drone.shape[1] * H / drone.shape[0]), H))
-        put_text(drone, meta.get("caption") or f"drone {meta['sweep']['D']:.0f} m", (20, 45))
         dash = last_dash if last_dash is not None else np.full((H, 1280, 3), 24, np.uint8)
         dash = cv2.resize(dash, (int(dash.shape[1] * H / dash.shape[0]), H))
         frame = np.hstack([drone, dash])
@@ -85,7 +82,7 @@ def main():
             writer = cv2.VideoWriter(a.out, cv2.VideoWriter_fourcc(*"mp4v"), fps, (frame.shape[1], frame.shape[0]))
         for _ in range(hold):
             writer.write(frame)
-        print(k, meta["sweep"]["D"], "알람" if k in by_frame else "-", flush=True)
+        print(k, (meta.get("sweep") or {}).get("D"), "알람" if k in by_frame else "-", flush=True)
     writer.release()
     print(f"-> {a.out} ({len(pngs) * hold / fps:.1f}초)")
 

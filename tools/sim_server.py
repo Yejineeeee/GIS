@@ -5,12 +5,15 @@
 사용자 승인이 걸리거나 어디에 떨어졌는지 알기 어렵다. 그래서 POST 를 받아
 바로 저장한다.
 
-    python sim_server.py 폴더 [포트]
+    python sim_server.py 폴더 [포트] [알람 폴더]
 
     GET  /            시뮬레이터 페이지
     POST /frame       {"png": "data:image/png;base64,...", "meta": {...}}
                       -> frames/sim_<번호>.png 와 .json 으로 저장
     POST /terrain     지형 높이 격자 -> terrain.json 으로 저장 (src/geo/sim_terrain.py)
+    GET  /latest?since=<ms>
+                      알람 폴더에서 가장 최근 알람의 추정 위치 (시뮬레이터 vwPursue 가 따라간다).
+                      since(에포크 ms) 이전 알람은 무시한다. 알람 폴더를 안 주면 found=false
 """
 import base64
 import json
@@ -22,6 +25,29 @@ from urllib.parse import parse_qs
 ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8712
 FRAMES = os.path.join(ROOT, "frames")
+ALERTS = os.path.abspath(sys.argv[3]) if len(sys.argv) > 3 else None
+
+
+def latest_alert(since_ms):
+    """알람 폴더(파이프라인 --out 또는 그 안 alerts)에서 가장 최근에 쓴 알람."""
+    if not ALERTS:
+        return {"found": False, "why": "알람 폴더 없음"}
+    d = os.path.join(ALERTS, "alerts") if os.path.isdir(os.path.join(ALERTS, "alerts")) else ALERTS
+    if not os.path.isdir(d):
+        return {"found": False, "why": "알람 폴더가 아직 없음"}
+    files = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".json")]
+    files = [f for f in files if os.path.getmtime(f) * 1000 >= since_ms]
+    if not files:
+        return {"found": False, "why": "새 알람 없음"}
+    f = max(files, key=os.path.getmtime)
+    try:
+        a = json.load(open(f, encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"found": False, "why": "알람을 쓰는 중"}
+    p = a.get("position") or {}
+    return {"found": True, "alert_id": a.get("alert_id"), "lat": p.get("lat"), "lon": p.get("lon"),
+            "radius": p.get("error_radius_m"), "verdict": a.get("location_verdict"),
+            "mtime_ms": int(os.path.getmtime(f) * 1000)}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -37,6 +63,17 @@ class Handler(SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(204)
         self.end_headers()
+
+    def do_GET(self):
+        path, _, query = self.path.partition("?")
+        if path == "/latest":
+            try:
+                since = float(parse_qs(query).get("since", ["0"])[0])
+            except ValueError:
+                since = 0
+            self._json(latest_alert(since))
+            return
+        super().do_GET()
 
     def do_POST(self):
         # ?site=jagok 이면 frames_jagok/, terrain_jagok.json 에 따로 저장한다
@@ -101,6 +138,8 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     print(f"{ROOT} 를 http://localhost:{PORT} 로 띄운다")
     print(f"프레임은 {FRAMES} 에 저장한다")
+    if ALERTS:
+        print(f"최근 알람은 {ALERTS} 에서 읽는다 (GET /latest)")
     # 한 줄짜리 서버면 한 연결이 막힐 때 전체가 선다. 프레임을 받는 중에
     # 브라우저가 다른 요청을 보내므로 연결마다 따로 받는다.
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

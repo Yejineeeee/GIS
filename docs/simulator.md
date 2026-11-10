@@ -326,3 +326,40 @@ python tools/make_demo_video.py results/pipeline_scenario results/demo_scenario 
 수색 중 처음 낸 추정은 크게 틀렸지만 미확정이라 용도를 말하지 않았고, 다가가면서
 확정으로 바뀌었다. 반경 판정이 틀린 단정을 막는 장면이다.
 
+
+### 실시간 연결 (드론이 추정 위치를 따라간다)
+
+미리 찍어 두고 처리하는 대신, 드론이 날면서 장마다 최신 알람을 읽어 스스로 방향을 정한다.
+알람이 없으면 신고 지점 주변을 돌고, 알람이 생기면 그 추정 위치로 다가가 150m 앞에서 머문다.
+추정이 바뀌면 다음 장부터 새 위치로 방향을 튼다.
+
+추정은 장마다 수십 m씩 흔들려서 그대로 겨냥하면 화면이 좌우로 떨린다. 그래서 겨냥점은 새 추정 쪽으로
+20%만 옮기고(`aimBlend`), 카메라는 남은 각도의 절반씩, 한 장에 2°까지만 돌며 1°보다 작은 차이는
+무시한다(`maxTurnDeg`, `maxPitchDeg`, `deadDeg`).
+
+```
+python tools/sim_server.py sim 8800 results/live           # 세 번째 인자: 알람을 읽을 폴더 (GET /latest)
+python tools/live_estimate.py sim/frames_live results/live --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json
+python src/dashboard/server.py --out results/live --frames sim/frames_live --geo-dir data/geo_jagok --port 8820
+```
+
+```
+await vwPrepare({ lat: 37.468027, lon: 127.102969 })
+await vwPursue({ center: { lat: 37.468913, lon: 127.10057 }, site: "live" })   // 멈추기: window.__pursueStop = true
+```
+
+`tools/live_estimate.py` 는 파이프라인의 프레임 폴더 지켜보기 모드(5.6)가 생기기 전까지 쓰는
+시험용이다. run.py 와 같은 함수로 장마다 위치와 판정을 내 `alerts/a-0001.json` 하나를 덮어쓰고,
+판정은 2장 연속 같을 때만 바꾼다. VLM 설명과 같은 사건 묶기는 하지 않는다. 장별 기록은
+`results/live/frames/` 에 남아 `tools/drone_overlay.py` 로 드론 화면 영상을 만들 수 있다.
+
+한 번 돌린 결과(발화점 37.468027, 127.102969, 신고 지점은 그 북서쪽 약 230m): 35초에 첫 탐지
+(미확정) 뒤 드론이 추정 위치로 다가가며 확정, 모호를 거쳐 마지막에 확정(반경 26m)이 됐다.
+마지막 추정은 실제 발화점에서 약 15m. 53장, 장면 시간 88초. 대시보드에도 같은 알람이 1초마다 갱신됐다.
+겨냥을 부드럽게 하기 전에는 접근 중 카메라가 한 장에 최대 6.3° 돌고 좌우로 8번 되돌아갔는데,
+바꾼 뒤에는 최대 1.9°, 되돌아감 1번이다.
+같은 설정으로 돌려도 V-World 화면이 매번 조금씩 달라 첫 탐지 시점은 14~35초로 달랐다.
+
+- 한 장 찍는 데 2~5초가 걸려(V-World 타일이 다 뜰 때까지 기다림) 실제 속도보다 느리다.
+  창을 숨기면 더 느려진다
+- V-World 인증키가 8800 포트로만 등록되어 시뮬레이터를 8800 에 띄운다. 대시보드는 다른 포트로 연다

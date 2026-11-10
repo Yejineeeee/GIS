@@ -341,6 +341,94 @@
     return { frames: saved.length, D0: +D0.toFixed(1), bearing: +bearing.toFixed(1) };
   };
 
+  // 실시간 연결: 드론이 장마다 최신 알람(추정 위치)을 읽어 스스로 방향을 정한다.
+  // 알람이 없으면 신고 지점 주변을 돌며 찾고, 알람이 생기면 그 추정 위치로 다가가
+  // stop m 앞에서 머문다. 추정이 바뀌면 다음 장부터 새 위치로 방향을 튼다.
+  // 추정은 장마다 수십 m씩 흔들리므로 바로 따라가지 않는다. 겨냥점은 새 추정 쪽으로
+  // aimBlend 만큼만 옮기고, 카메라는 남은 각도의 절반씩, 한 장에 maxTurnDeg 도(위아래는 maxPitchDeg 도)까지만
+  // 돈다. deadDeg 보다 작은 차이는 무시한다.
+  // 파이프라인이 프레임 폴더를 지켜보며 알람을 써야 한다(5.6 지켜보기 모드, 그 전에는
+  // tools/live_estimate.py). 서버는 알람 폴더를 알아야 한다:
+  //     python tools/sim_server.py sim 8800 results/live
+  //     await vwPrepare(FIRE)
+  //     await vwPursue({ center: 신고지점, site: "live" })
+  // 멈추기: window.__pursueStop = true
+  window.vwPursue = async function (o) {
+    // 수색할 때는 한 장에 searchStepDeg 도씩 돈다(vwSearch 와 같게). 접근할 때는 every 초마다 한 장
+    o = Object.assign({ radius: 600, agl: 150, speed: 15, every: 1.0, stop: 150, start: 180, searchStepDeg: 10,
+                        site: "live", maxFrames: 120, hoverFrames: 5,
+                        aimBlend: 0.2, maxTurnDeg: 2, maxPitchDeg: 2, deadDeg: 1 }, o || {});
+    const c = o.center, mLat = 111320, mLon = 111320 * Math.cos(C.Math.toRadians(c.lat));
+    const since = Date.now();
+    const B0 = C.Math.toRadians(o.start);
+    let pos = { lat: c.lat + o.radius * Math.cos(B0) / mLat, lon: c.lon + o.radius * Math.sin(B0) / mLon };
+    let bearing = o.start, hover = 0, last = null, t_s = 0, dt = 0;
+    let aim = null, camH = null, camP = null;      // 부드럽게 옮기는 겨냥점과 카메라 방향
+    window.__pursueStop = false;
+    window.__pursueMode = null;
+    smoke.setManual(true);
+    const saved = [];
+    for (let k = 0; k < o.maxFrames && !window.__pursueStop; k++) {
+      let est = null;
+      try { est = await (await fetch("/latest?since=" + since)).json(); } catch (e) { est = null; }
+      let look, mode;
+      if (est && est.found) {
+        // 추정 위치로 다가간다. stop m 안이면 그 자리에서 본다
+        aim = aim ? { lat: aim.lat + o.aimBlend * (est.lat - aim.lat), lon: aim.lon + o.aimBlend * (est.lon - aim.lon) }
+                  : { lat: est.lat, lon: est.lon };
+        look = aim;
+        const dE = (look.lon - pos.lon) * mLon, dN = (look.lat - pos.lat) * mLat, D = Math.hypot(dE, dN);
+        if (D > o.stop) {
+          const step = Math.min(o.speed * o.every, D - o.stop);
+          pos = { lat: pos.lat + dN / D * step / mLat, lon: pos.lon + dE / D * step / mLon };
+          hover = 0;
+        } else hover++;
+        mode = "APPROACH";
+        last = est;
+        dt = o.every;
+      } else if (k) {
+        // 아직 알람이 없으면 신고 지점을 가운데 두고 원을 따라 돈다
+        bearing += o.searchStepDeg;
+        dt = (2 * Math.PI * o.radius * o.searchStepDeg / 360) / o.speed;
+        const B = C.Math.toRadians(bearing);
+        pos = { lat: c.lat + o.radius * Math.cos(B) / mLat, lon: c.lon + o.radius * Math.sin(B) / mLon };
+        look = c;
+        mode = "SEARCH";
+      } else {
+        look = c;
+        mode = "SEARCH";
+      }
+      const carto = [C.Cartographic.fromDegrees(pos.lon, pos.lat), C.Cartographic.fromDegrees(look.lon, look.lat)];
+      await C.sampleTerrain(viewer.terrainProvider, 15, carto);
+      const g = carto[0].height, gL = carto[1].height;
+      const dE = (look.lon - pos.lon) * mLon, dN = (look.lat - pos.lat) * mLat;
+      let heading = (Math.atan2(dE, dN) * 180 / Math.PI + 360) % 360;
+      let pitch = -Math.atan2(o.agl + g - gL, Math.max(1, Math.hypot(dE, dN))) * 180 / Math.PI;
+      // 접근 중에는 한 장에 도는 각도를 제한한다(수색에서 접근으로 넘어가는 첫 장은 바로 돈다)
+      if (mode === "APPROACH" && camH !== null && window.__pursueMode === "APPROACH") {
+        // deadDeg 보다 작은 차이는 무시하고, 나머지는 절반씩만 따라간다(좌우로 되돌아가는 떨림 막기)
+        const ease = (d, lim) => Math.abs(d) < o.deadDeg ? 0 : Math.max(-lim, Math.min(lim, d / 2));
+        heading = (camH + ease(((heading - camH + 540) % 360) - 180, o.maxTurnDeg) + 360) % 360;
+        pitch = camP + ease(pitch - camP, o.maxPitchDeg);
+      }
+      camH = heading; camP = pitch;
+      viewer.camera.setView({ destination: C.Cartesian3.fromDegrees(pos.lon, pos.lat, g + o.agl),
+        orientation: { heading: C.Math.toRadians(heading), pitch: C.Math.toRadians(pitch), roll: 0 } });
+      if (k) smoke.step(dt);
+      t_s += k ? dt : 0;
+      await settleAt(look.lon, look.lat, 12000);
+      saved.push(await saveFrame(o.site, "PURSUE_VW3D", k, t_s, {
+        stage: mode,
+        pursue: { mode, target: last ? { lat: last.lat, lon: last.lon, alert_id: last.alert_id, verdict: last.verdict } : null,
+                  center: c, agl: o.agl, t_s: +t_s.toFixed(1) } }));
+      window.__pursueK = k;
+      window.__pursueMode = mode;
+      if (hover >= o.hoverFrames) break;          // 추정 위치 앞에서 몇 장 머문 뒤 끝낸다
+    }
+    smoke.setManual(false);
+    return { frames: saved.length, last };
+  };
+
   // 정답 계산용 지형 격자. V-World 지형을 화면에 띄워 읽으므로 느리다. 칸마다 카메라를 옮긴다
   window.vwHeights = async function (pts) {
     const out = [];

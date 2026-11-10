@@ -41,12 +41,30 @@ def steps(src):
     return [(k, best[k][0], best[k][1]) for k in sorted(best)]
 
 
+def held(S, hold=2):
+    """판정이 hold 장 연속으로 같을 때만 바꾼다. 순번마다 보일 알람.
+
+    경계 근처에서는 추정 위치가 조금만 흔들려도 확정과 모호가 번갈아 나온다. 영상에서는
+    바뀐 판정이 hold 장 이어질 때까지 앞 판정의 마지막 알람을 보인다. 1이면 장마다 그대로.
+    """
+    out, cur, run, last = [], None, [], {}
+    for _, al, _ in S:
+        v = al["location_verdict"]
+        last[v] = al
+        run = run + [v] if run and run[-1] == v else [v]
+        if cur is None or (v != cur and len(run) >= hold):
+            cur = v
+        out.append(al if v == cur else last[cur])
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src", help="run.py --no-merge 결과 폴더")
     ap.add_argument("dst", help="대시보드가 읽을 폴더")
     ap.add_argument("--step", type=int, help="이 순번(0부터)의 상태를 쓴다")
     ap.add_argument("--list", action="store_true", help="순번별 프레임, 판정, 반경을 보여 준다")
+    ap.add_argument("--hold", type=int, default=2, help="판정이 이만큼 연속으로 같아야 바꾼다 (1이면 장마다)")
     a = ap.parse_args()
     src, dst = Path(a.src), Path(a.dst)
     S = steps(src)
@@ -56,7 +74,8 @@ def main():
         return
     (dst / "alerts").mkdir(parents=True, exist_ok=True)
     (dst / "detections").mkdir(parents=True, exist_ok=True)
-    k, al, det_path = S[a.step]
+    k, _, det_path = S[a.step]
+    al = held(S, a.hold)[a.step]
     shutil.copy(det_path, dst / "detections" / det_path.name)
     al = dict(al, alert_id="a-0001")
     # VLM 없이 돌린 결과라 설명이 비어 있다. 같은 템플릿으로 문장을 만든다(VLM 사실은 쓰지 않음).
