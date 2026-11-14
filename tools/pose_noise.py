@@ -81,9 +81,9 @@ def main():
     a = ap.parse_args()
 
     from detect import Detector
-    from sim_terrain import SimTerrain
+    from sim_terrain import SimTerrain, sim_paths
     from query import to_5179
-    ter = SimTerrain(str(ROOT / "sim" / "terrain.json"))
+    ter = SimTerrain(str(sim_paths()[1]))
     det = Detector(a.weights)
     lv = LEVELS[a.level]
     rng = random.Random(a.seed)
