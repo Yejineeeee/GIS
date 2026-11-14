@@ -1,0 +1,265 @@
+﻿run,img,cond,crop,sec,prompt_n,prompt_ms,predicted_n,predicted_ms,rss_gb,text
+1,0,crop,684x638,37.38,636,34654.807,34,2695.925,5.0,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,0,flame+,684x638,0.74,25,702.489,1,0.001,5.0,예
+1,0,flame,684x638,32.85,593,32821.813,1,0.001,5.02,예
+1,0,small+crop,684x638,43.96,808,41194.238,34,2739.169,5.02,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,0,full,684x638,50.36,861,47904.667,34,2416.726,5.1,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,0,full+crop,684x638,77.55,1441,74732.547,34,2758.589,5.15,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,1,crop,460x690,24.61,484,22291.97,34,2300.29,5.15,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,1,flame+,460x690,0.62,25,596.482,1,0.001,5.15,예
+1,1,flame,460x690,21.28,441,21258.363,1,0.001,5.15,예
+1,1,small+crop,460x690,33.5,656,30953.792,34,2524.943,5.15,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,1,full,460x690,48.05,861,45284.219,34,2731.781,5.15,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,1,full+crop,460x690,72.56,1289,69438.712,34,3056.807,5.15,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,2,crop,1024x642,54.6,935,51826.7,34,2731.295,5.16,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,2,flame+,1024x642,0.83,25,793.861,1,0.001,5.16,예
+1,2,flame,1024x642,48.94,892,48896.803,1,0.001,5.17,예
+1,2,small+crop,1024x642,61.02,1107,58224.854,34,2755.225,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,2,full,1024x642,48.72,861,46174.292,34,2518.114,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,2,full+crop,1024x642,96.2,1740,93039.275,34,3086.345,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,3,crop,376x518,18.25,318,15442.954,34,2784.014,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,3,flame+,376x518,0.72,25,704.382,1,0.001,5.18,예
+1,3,flame,376x518,14.7,275,14690.829,1,0.001,5.18,예
+1,3,small+crop,376x518,27.75,490,25033.368,34,2698.034,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,3,full,376x518,52.02,861,49354.325,34,2632.218,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,3,full+crop,376x518,63.03,1123,60359.155,34,2624.603,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,4,crop,1024x496,40.29,750,37654.33,34,2586.31,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,4,flame+,1024x496,0.7,25,677.525,1,0.001,5.18,예
+1,4,flame,1024x496,35.98,707,35948.245,1,0.001,5.18,예
+1,4,small+crop,1024x496,45.8,922,43279.534,34,2475.02,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,4,full,1024x496,45.14,861,42451.462,34,2661.618,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,4,full+crop,1024x496,80.69,1555,77952.109,34,2673.927,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,5,crop,108x96,4.61,96,2406.374,34,2204.536,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+1,5,flame+,108x96,0.52,25,512.612,1,0.001,5.18,예
+1,5,flame,108x96,1.48,53,1481.498,1,0.001,5.18,예
+1,5,small+crop,108x96,11.93,268,9650.788,34,2275.241,5.18,"{
+  ""smoke_present"": false,
+  ""smoke_color"": ""없음"",
+  ""flame_visible"": false
+}"
+1,5,full,108x96,43.98,861,41583.01,33,2342.325,5.18,"{
+  ""smoke_present"": false,
+  ""smoke_color"": ""없음"",
+  ""flame_visible"": false
+}"
+1,5,full+crop,108x96,45.38,901,43012.107,33,2330.216,5.18,"{
+  ""smoke_present"": false,
+  ""smoke_color"": ""없음"",
+  ""flame_visible"": false
+}"
+2,0,crop,684x638,31.67,636,29119.524,34,2521.017,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,0,flame+,684x638,0.65,25,627.682,1,0.001,5.18,예
+2,0,flame,684x638,29.32,593,29295.489,1,0.001,5.18,예
+2,0,small+crop,684x638,40.67,808,37931.683,34,2698.671,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,0,full,684x638,47.87,861,45044.187,34,2785.481,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,0,full+crop,684x638,79.23,1441,76491.921,34,2657.792,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,1,crop,460x690,23.76,484,21464.546,34,2270.41,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,1,flame+,460x690,0.57,25,551.819,1,0.001,5.18,예
+2,1,flame,460x690,20.53,441,20508.767,1,0.001,5.18,예
+2,1,small+crop,460x690,31.71,656,29068.134,34,2619.662,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,1,full,460x690,44.34,861,41836.095,34,2473.303,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,1,full+crop,460x690,63.53,1289,60908.902,34,2568.117,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,2,crop,1024x642,47.95,935,45289.457,34,2601.848,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,2,flame+,1024x642,0.67,25,640.056,1,0.001,5.18,예
+2,2,flame,1024x642,44.55,892,44519.562,1,0.001,5.18,예
+2,2,small+crop,1024x642,56.49,1107,53851.502,34,2600.173,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,2,full,1024x642,45.05,861,42513.858,34,2500.292,5.18,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,2,full+crop,1024x642,93.68,1740,90379.742,34,3221.792,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,3,crop,376x518,17.6,318,15108.242,34,2480.825,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,3,flame+,376x518,0.63,25,618.233,1,0.001,5.19,예
+2,3,flame,376x518,13.58,275,13567.253,1,0.001,5.19,예
+2,3,small+crop,376x518,24.98,490,22271.82,34,2694.619,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,3,full,376x518,46.61,861,43827.076,34,2745.129,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,3,full+crop,376x518,60.49,1123,57801.783,34,2648.204,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,4,crop,1024x496,39.77,750,37079.728,34,2640.884,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,4,flame+,1024x496,0.75,25,703.421,1,0.001,5.19,예
+2,4,flame,1024x496,38.92,707,38892.31,1,0.001,5.19,예
+2,4,small+crop,1024x496,52.43,922,49603.277,34,2781.335,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,4,full,1024x496,53.07,861,50112.064,34,2909.267,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,4,full+crop,1024x496,98.01,1555,94754.08,34,3188.725,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,5,crop,108x96,2.64,1,111.607,34,2522.99,5.19,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+2,5,flame+,108x96,0.6,25,592.58,1,0.001,5.19,예
+2,5,flame,108x96,1.96,53,1958.899,1,0.001,5.19,예
+2,5,small+crop,108x96,15.04,268,12035.016,34,2988.876,5.19,"{
+  ""smoke_present"": false,
+  ""smoke_color"": ""없음"",
+  ""flame_visible"": false
+}"
+2,5,full,108x96,51.97,861,49564.201,33,2367.856,5.19,"{
+  ""smoke_present"": false,
+  ""smoke_color"": ""없음"",
+  ""flame_visible"": false
+}"
+2,5,full+crop,108x96,51.71,901,49195.701,33,2471.967,5.19,"{
+  ""smoke_present"": false,
+  ""smoke_color"": ""없음"",
+  ""flame_visible"": false
+}"
