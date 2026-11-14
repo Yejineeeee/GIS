@@ -92,6 +92,38 @@ def risk_targets(land_use, buildings):
     return out
 
 
+def replace_dropped(picked, drop, cands):
+    """검토에서 교체로 표시한 사진을 같은 장소·DB·클래스의 다른 영상 사진으로 바꾼다.
+    자리(가상 위치, 반경)는 그대로 둔다. 영상마다 고르는 사진은 늘 같게 정해진다."""
+    used = {(p[1], p[4]) for p in picked}
+    pools, out, n = {}, [], 0
+    for item in picked:
+        group, place, db, cls, vid, name, lab = item
+        if name[:-5] + ".jpg" not in drop:
+            out.append(item)
+            continue
+        key = (db, cls, place)
+        if key not in pools:
+            vids = sorted(cands.get(key, {}).items())
+            random.Random(f"{SEED}-{db}-{cls}-{place}").shuffle(vids)
+            pools[key] = vids
+        for v, files in pools[key]:
+            if (place, v) in used:
+                continue
+            ok = [f for f in sorted(files, key=lambda t: t[0]) if f[0][:-5] + ".jpg" not in drop]
+            if not ok:
+                continue
+            used.add((place, v))
+            nm, lb = random.Random(f"{SEED}-{place}-{v[0]}-{v[1]}").choice(ok)
+            out.append((group, place, db, cls, v, nm, lb))
+            n += 1
+            break
+        else:
+            print(f"  주의: {name} 를 바꿀 사진이 없어 그대로 둠")
+            out.append(item)
+    return out, n
+
+
 def main():
     ap = argparse.ArgumentParser(description="평가셋 100장과 사실 목록 만들기 (WBS 6.1)")
     ap.add_argument("vl_zip")
@@ -99,6 +131,7 @@ def main():
     ap.add_argument("buildings")
     ap.add_argument("dem", nargs="+")
     ap.add_argument("--positions", default=str(ROOT / "docs" / "demo_positions.csv"))
+    ap.add_argument("--review", help="6.2 검토표(docs/eval_review.csv). 교체·수정을 반영한다")
     a = ap.parse_args()
 
     # 1. 라벨에서 후보 모으기 (시연 지역 두 곳의 드론 촬영분)
@@ -164,6 +197,13 @@ def main():
         bands.setdefault(p["band"], []).append(p)
     order = [p for trio in zip(*[bands[b] for b in sorted(bands)]) for p in trio]  # 구간을 번갈아
     rng.shuffle(picked)
+    review = {}
+    if a.review:   # 6.2 사람 검토 반영
+        with open(a.review, encoding="utf-8-sig") as f:
+            review = {r["image"]: r for r in csv.DictReader(f)}
+        drop = {k for k, r in review.items() if r["판정"].strip() == "교체"}
+        picked, n_rep = replace_dropped(picked, drop, cands)
+        print(f"  검토 반영: 교체 {n_rep}장")
     geo = GeoData(a.landuse, a.buildings, a.dem)
 
     facts, rows = [], []
@@ -181,6 +221,15 @@ def main():
         n_smoke = sum(1 for x in anns if cat.get(x["category_id"]) in SMOKE_CATS)
         image_file = name[:-5] + ".jpg"
         verdict = verdict_of(land_use, radius)
+        r = review.get(image_file)
+        state = "검토 전" if review else "-"
+        if r:
+            state = r["판정"].strip() or "통과"
+            if state == "수정":
+                if r["고친_클래스"].strip():
+                    cls = r["고친_클래스"].strip()
+                if r["고친_화염"].strip():
+                    flame = r["고친_화염"].strip() in ("True", "true", "있음", "O", "o", "1")
 
         facts.append({
             "image": image_file,
@@ -202,6 +251,7 @@ def main():
             "source": "AI Hub 71330 Validation 라벨",
             "place": place, "camera_id": vid[0], "video_id": vid[1],
             "group": group,
+            "review": state,
         })
         rows.append({"file_name": name, "class": cls, "place": place, "split": "eval",
                      "db": db, "smoke": int(group == "연기"), "camera_id": vid[0],
@@ -231,11 +281,11 @@ def main():
         xs = [x for x in facts if x["error_radius_m"] == r]
         c = {v: sum(1 for x in xs if x["verdict"] == v) for v in ("확정", "모호", "미확정")}
         print(f"  {r:>4}m {c['확정']:>4} {c['모호']:>4} {c['미확정']:>5}")
-    write_doc(facts)
+    write_doc(facts, bool(review))
     print("\n저장: results/eval_facts.jsonl, docs/eval_set.csv, docs/eval_set.md")
 
 
-def write_doc(facts):
+def write_doc(facts, reviewed=False):
     """실행 결과 숫자를 넣어 docs/eval_set.md 를 만든다."""
     def cnt(xs, key):
         out = {}
@@ -248,7 +298,14 @@ def write_doc(facts):
     L = []
     L.append("# 평가셋 100장 (WBS 6.1)\n")
     L.append("설명 품질(6.2)과 오차 반경별 판정(6.5)을 잴 때 쓰는 평가셋과, 사진마다 정답이 되는 사실 목록이다.\n")
-    L.append("담당: 이수진 / 상태: 100장과 사실 목록 생성 완료, 채점기 이름 맞춤은 예진 확인 전\n")
+    if reviewed:
+        st = {}
+        for x in facts:
+            st[x["review"]] = st.get(x["review"], 0) + 1
+        L.append("담당: 이수진 / 상태: 6.2 사람 검토 반영 (확정본). "
+                 + ", ".join(f"{k} {v}" for k, v in sorted(st.items())) + "\n")
+    else:
+        L.append("담당: 이수진 / 상태: 100장과 사실 목록 생성 완료, 채점기 이름 맞춤은 예진 확인 전\n")
     L.append("## 만드는 법\n")
     L.append("```\npython3 tools/make_eval_set.py <VL.zip> <landuse_5179.geojson> <buildings_5179.geojson> \\\n"
              "    <37808.img> <37804.img>\n```\n")
