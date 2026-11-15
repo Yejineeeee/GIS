@@ -1,0 +1,282 @@
+[
+ {
+  "fire": {
+   "lat": 37.464948,
+   "lon": 127.094916
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 120
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 270
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.473033,
+   "lon": 127.088125
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 0
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 60
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.475728,
+   "lon": 127.101707
+  },
+  "occluded": {
+   "D": 400,
+   "bearing": 60
+  },
+  "visible": {
+   "D": 400,
+   "bearing": 150
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.468991,
+   "lon": 127.1068
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 240
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 30
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.47438,
+   "lon": 127.088125
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 30
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 120
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.471685,
+   "lon": 127.113591
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 270
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 30
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.462253,
+   "lon": 127.100009
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 270
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 120
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.471685,
+   "lon": 127.086427
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 330
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 0
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.463601,
+   "lon": 127.098311
+  },
+  "occluded": {
+   "D": 400,
+   "bearing": 300
+  },
+  "visible": {
+   "D": 400,
+   "bearing": 90
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.458211,
+   "lon": 127.098311
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 300
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 270
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.466296,
+   "lon": 127.088125
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 30
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 180
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.482465,
+   "lon": 127.096614
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 120
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 0
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.483813,
+   "lon": 127.098311
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 120
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 330
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.462253,
+   "lon": 127.098311
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 240
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 330
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.478423,
+   "lon": 127.100009
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 240
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 60
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.473033,
+   "lon": 127.084729
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 330
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 120
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.466296,
+   "lon": 127.110196
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 30
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 300
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.460906,
+   "lon": 127.093218
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 90
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 0
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.459558,
+   "lon": 127.098311
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 270
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 60
+  }
+ },
+ {
+  "fire": {
+   "lat": 37.466296,
+   "lon": 127.09152
+  },
+  "occluded": {
+   "D": 600,
+   "bearing": 330
+  },
+  "visible": {
+   "D": 600,
+   "bearing": 150
+  }
+ }
+]

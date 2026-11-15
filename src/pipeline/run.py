@@ -66,6 +66,7 @@ sys.path.insert(0, str(ROOT / "src" / "vlm"))
 sys.path.insert(0, str(ROOT / "src" / "pipeline"))
 
 from transform import to_position          # noqa: E402  3.3
+from occlusion import adjust as occlusion_adjust  # noqa: E402  4.7 밑동 가림
 from query import GeoData, query            # noqa: E402  3.4
 from verdict import judge, RULE             # noqa: E402  임시 판정
 from vlm_client import VLM                  # noqa: E402
@@ -157,6 +158,8 @@ def main():
                     help="프레임 사이 대기(초). 실제 속도처럼 보려면 1~2")
     ap.add_argument("--no-merge", action="store_true", help="같은 사건 묶기를 끈다")
     ap.add_argument("--no-verify", action="store_true", help="후보 검증기를 끈다 (VLM 이 있을 때만 켜짐)")
+    ap.add_argument("--no-occlusion", action="store_true", help="밑동 가림 판단(지형)을 끈다")
+    ap.add_argument("--sim-terrain", help="DEM 대신 시뮬레이터 지형 격자(sim/terrain_*.json)를 쓴다. DEM 이 없는 지역용")
     ap.add_argument("--out", default="results/pipeline")
     a = ap.parse_args()
 
@@ -171,6 +174,10 @@ def main():
 
     t = time.perf_counter()
     geo = GeoData(str(landuse), str(buildings) if buildings else None, dem or None)
+    if a.sim_terrain:
+        from sim_terrain import SimTerrain
+        geo.dem = SimTerrain(a.sim_terrain)
+        dem = [a.sim_terrain]
     print(f"[준비] 지리 자료 {ms(t)}ms: 용도지역 {len(geo.landuse)}개, "
           f"건물 {len(geo.buildings) if buildings else '없음'}, DEM {len(dem) if dem else '없음'}")
 
@@ -220,7 +227,7 @@ def main():
         print(f"[준비] 후보 검증기 켬: 알람은 conf 1등으로 먼저 내고, P(예) {VERIFY_TAU} 이상인 "
               f"탐지로 위치를 고쳐 다시 낸다" + (" (차례대로)" if a.sync else " (따로 도는 스레드에서)"))
     stats = {"frames": 0, "detections": 0, "alerts": 0, "merged": 0, "fail": 0, "verify_skip": 0,
-             "relocated": 0, "verify_saved": 0, "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "truth_err": {}}
+             "relocated": 0, "verify_saved": 0, "occluded": 0, "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "truth_err": {}}
     lock = threading.Lock()      # events, stats 를 검증 스레드와 같이 쓴다
     t_run = time.perf_counter()
 
@@ -229,6 +236,13 @@ def main():
         t = time.perf_counter()
         try:
             position, tinfo = to_position(frame, det, dem=geo.dem)
+            if not a.no_occlusion:
+                # 밑동이 능선 뒤에 숨었으면 위치를 숨은 구간 가운데로 옮기고 반경을 키운다
+                position, span = occlusion_adjust(frame, tinfo, position, geo.dem)
+                if span:
+                    tinfo["occlusion"] = span
+                    with lock:
+                        stats["occluded"] += 1
         except ValueError as e:
             with lock:
                 stats["fail"] += 1
@@ -418,6 +432,7 @@ def main():
     print(f"  프레임 {stats['frames']}, 탐지 {stats['detections']}, 알람 {stats['alerts']} "
           f"(같은 사건으로 묶음 {stats['merged']}, 좌표 변환 실패 {stats['fail']}, "
           f"검증기 미통과 {stats['verify_skip']}, 검증기로 위치 수정 {stats['relocated']}, "
+          f"밑동 가림으로 위치 수정 {stats['occluded']}, "
           f"묶여서 검증 생략 {stats['verify_saved']})")
     print("  판정: " + ", ".join(f"{k} {v}" for k, v in stats["verdict"].items()))
     print(f"  마지막 알람까지 {t_alerts_done}ms, 설명까지 포함 {ms(t_run)}ms")
