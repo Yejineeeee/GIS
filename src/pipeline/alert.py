@@ -99,6 +99,8 @@ class Describer:
     def __init__(self, vlm, pub, sync=False):
         self.vlm, self.pub, self.sync = vlm, pub, sync
         self.done = []                 # (alert_id, 걸린 ms, 문장 또는 실패 사유)
+        self.yield_to = None           # 참을 돌려주는 동안 설명을 미룬다 (같은 GPU 의 검증기 먼저)
+        self.current = None            # alert_id -> 지금 알람의 detection_id. 그 사이 갱신됐으면 옛 설명을 내지 않는다
         self.q = queue.Queue()
         if not sync:
             self.th = threading.Thread(target=self._loop, daemon=True)
@@ -118,6 +120,17 @@ class Describer:
         if not self.sync:
             self.q.join()
 
+    def _stale(self, alert):
+        """이 설명 작업이 만들어진 뒤 같은 alert_id 가 다른 탐지로 갱신됐는가."""
+        if not self.current:
+            return False
+        now = self.current(alert["alert_id"])
+        if now is not None and now != alert["detection_id"]:
+            self.pub.note(alert_id=alert["alert_id"], stage="설명", skipped="알람이 갱신되어 옛 설명을 내지 않음",
+                          detection_id=alert["detection_id"], current=now)
+            return True
+        return False
+
     def _loop(self):
         while True:
             job = self.q.get()
@@ -135,6 +148,10 @@ class Describer:
             self.pub.note(alert_id=aid, stage="설명", error="사진을 못 찾음 (--frames 확인)")
             print(f"     {aid} 설명 건너뜀: 사진을 못 찾음")
             return
+        while self.yield_to and not self.sync and self.yield_to():
+            time.sleep(0.1)
+        if self._stale(alert):
+            return
         observed, vlm_ms, raw = self.vlm.observe(str(image_path) if image_path else None)
         if observed is None:
             self.pub.note(alert_id=aid, stage="설명", error=f"스키마 실패: {raw[:200]}")
@@ -147,6 +164,8 @@ class Describer:
         alert["latency_ms"]["vlm"] = vlm_ms
         alert["latency_ms"]["alert_to_description"] = ms(t_alert)
         alert["time"] = now_iso()
+        if self._stale(alert):     # 설명을 만드는 동안 알람이 갱신됐다. 새 위치의 설명이 뒤따른다
+            return
         self.pub.send(alert)
         bad = verify.check(desc, alert, observed)
         self.pub.note(alert_id=aid, stage="설명", violations=bad, raw=raw)
