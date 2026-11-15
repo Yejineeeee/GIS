@@ -23,11 +23,11 @@
 ```bash
 # 사진부터 한 번에 (기본)
 python src/pipeline/run.py --frames 사진폴더 --weights best.pt \
-    --geo-dir data/geo_moraegogae --vlm fake
+    --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json --vlm fake
 
 # 미리 만든 탐지 결과 JSON으로
 python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
-    --geo-dir data/geo_moraegogae --vlm fake
+    --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json --vlm fake
 ```
 
 사진 옆에 같은 이름의 JSON(시뮬레이터 프레임)이 있으면 그 카메라 값을 쓰고,
@@ -37,6 +37,7 @@ python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
 | 옵션 | 내용 |
 |---|---|
 | `--geo-dir` | `landuse_5179.geojson`, `buildings_5179.geojson`, DEM `*.img`가 있는 폴더 |
+| `--sim-terrain` | 시뮬레이터 지형 격자 JSON. 주면 DEM 대신 쓴다. 자곡동 시뮬레이터 프레임은 `sim/terrain_jagok3d.json` (실제 드론 사진에는 DEM) |
 | `--vlm none` | 설명 없이 알람만 |
 | `--vlm fake` | 고정된 사실로 설명을 만든다. 연결 확인용, 결과로 쓰지 않는다 |
 | `--vlm qwen` | Qwen2.5-VL-3B 4bit. GPU가 있으면 GPU |
@@ -87,7 +88,23 @@ python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
 ## 같은 사건 묶기
 
 새 탐지의 위치가 이미 낸 알람의 오차 원과 겹치면 같은 사건으로 보고 알람을 새로 내지 않는다.
-알람 갱신과 해제(생명주기)는 향후 과제다.
+
+### 알람 갱신 (11/15)
+
+같은 사건의 새 탐지가 오차 반경을 지금 알람의 **80% 이하**로 줄이면, 같은 `alert_id` 로 위치, 반경,
+용도 비율, 판정, 근거를 고쳐 다시 내고 설명도 새로 만든다(`--no-update` 로 끈다).
+
+- 드론이 다가갈수록 반경이 줄어 미확정 → 확정으로 바뀌는 장면이 그대로 알람에 나온다.
+  예전에는 첫 알람(수색 중, 반경 수백 m)이 끝까지 남고 뒤의 정확한 추정은 묶여서 버려졌다
+- 반경이 줄 때만 고치므로 판정이 앞뒤로 흔들리지 않는다 (`tools/live_estimate.py` 의 "2장 연속" 대신)
+- 같은 사건으로 묶는 원은 처음 알람 것을 그대로 쓴다. 반경이 줄었다고 같은 연기의 다른 조각이
+  새 알람으로 떨어져 나가지 않게 한다
+- 갱신하면 설명을 비우고(`description: null`) 새로 만든다. 만드는 동안 또 갱신되면 옛 설명은 내지 않는다
+  (`alert.py` 의 `Describer._stale`)
+- `alerts.jsonl` 에 갱신마다 한 줄씩 쌓이고, 대시보드가 이걸로 갱신 기록을 보여 준다. 알람 형식(v0.3)은 그대로
+- `debug.jsonl` 에 `stage: "알람 갱신"` 으로 앞뒤 반경과 정답 거리를 남긴다
+
+알람 해제는 향후 과제다.
 
 ## 확인한 것
 
@@ -113,6 +130,22 @@ python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
   GNSS 오차와 연기 밑동 항만 남기 때문이다. 탐지가 틀린 경우는 반경이 막지 못한다
 - 지리 조회가 알람 하나에 1.1~1.6초 걸린다. 건물 15,876채를 매번 전부 확인하기 때문이다
 - 탐지는 장당 약 0.35~0.43초 (첫 장은 모델 준비 포함 약 3초)
+
+3) 자곡동 신고 시나리오: best.pt, `data/geo_jagok`(용도지역 170개), `sim/frames_scenario` 38장,
+`--sim-terrain sim/terrain_jagok3d.json`, fake VLM 2초, 후보 검증기·밑동 가림 켬 (11/15)
+
+| 프레임 | 단계 | a-0001 | 정답과 거리 |
+|---|---|---|---|
+| 2 | 수색 중 첫 탐지 | 미확정, 반경 276.8m | 168.3m |
+| 16 | 갱신 | 미확정, 220.6m | 127.7m |
+| 20 | 갱신 | 미확정, 95.8m | 86.3m |
+| 24 | 갱신 | **확정**(자연녹지), 72.5m | 22.4m |
+| 28 / 33 / 36 | 갱신 | 확정, 54.4m / 39.2m / 31.1m | 9.5m / 4.5m / 12.9m |
+
+- 알람 1개, 갱신 6번, 묶음 15, 밑동 가림으로 위치 수정 9, 형식 검사 1/1 통과
+- 마지막 추정은 정답에서 12.9m, 오차 반경 31.1m 안
+- 수색 중 추정은 크게 틀렸지만 미확정이라 용도를 말하지 않았고, 다가가며 확정이 됐다
+- 갱신 없이(`--no-update`) 돌리면 끝까지 첫 알람(미확정 276.8m)만 남는다
 
 ## 남은 것
 

@@ -61,8 +61,11 @@ python3 tools/sim_server.py sim 8712
 `src/geo/transform.py` 는 `camera.alt_ref` 가 `지면` 이 아니면 가정값 120m 를 쓰고
 넘어간다. 실제 드론 GPS 는 타원체나 해발 기준으로 고도를 준다.
 
-모래고개입구는 지면이 해발 102.7m 다. 그래서 "타원체 120m" 는 실제로 지면 위
-17.3m 다. 이 차이가 지상에서 60.1m 오차로 나타났다.
+이 측정에서 드론 아래 지면은 Cesium 지형으로 102.7m 였다. 그래서 "타원체 120m" 는
+실제로 지면 위 17.3m 다. 이 차이가 지상에서 60.1m 오차로 나타났다.
+
+(102.7m 는 지역 전체의 높이가 아니라 그때 드론 자리의 값이다. 발화점 지면은 Cesium
+44.7m, DEM 31.5m 이고, `docs/landuse.md` 의 약 13m 는 모래고개입구 지점의 DEM 값이다)
 
 | 넣은 값 | 결과와 정답의 차이 |
 |---|---|
@@ -237,7 +240,9 @@ python 에서        SimTerrain("sim/terrain.json") 을 transform.to_position(de
 기수와 카메라 각도 오차가 빠져 있어서다. 기수 오차는 거리에 비례해 옆으로,
 카메라 각도 오차는 얕은 각도에서 거리 방향으로 커진다. 각도 항을 2 시그마로 더하면
 포함률이 89~100% 가 되고, 반경은 200m 35m, 400m 90m, 600m 166m, 800m 261m 가 된다.
-반경 공식(`src/geo/transform.py`, WBS 3.3)을 바꿀지는 따로 정한다.
+11주차에 이 항을 `src/geo/transform.py`(WBS 3.3)에 넣었다. 다시 재면 정답 픽셀 포함률이
+200m 100%, 300m 99%, 400m 97%, 600m 92%, 800m 88% 다. conf 1등 탐지를 그대로 쓰면
+54~94% 로, 남는 것은 탐지가 밑동을 잘못 짚은 경우다.
 
 ### 화질 열화
 
@@ -261,3 +266,100 @@ python 에서        SimTerrain("sim/terrain.json") 을 transform.to_position(de
 
 브라우저 창이 숨겨진 채로 몇 분이 지나면 타이머가 1분 단위로 늦춰져 `sweep()` 이
 거의 멈춘다. 많이 찍을 때는 창을 보이게 둔다.
+
+## 자곡동 V-World 3D (11주차)
+
+시연 지역을 자곡동으로 옮기면서 V-World 3D 지도(WebGL 3.0, Cesium 기반) 위에서 찍는
+시뮬레이터를 따로 만들었다. 건물과 지형이 사진 질감이라 화면이 실제와 가깝다.
+
+### 쓰는 법
+
+1. `sim/vworld_key.js.example` 을 `sim/vworld_key.js` 로 복사하고 V-World 인증키를 넣는다.
+   키에 등록한 주소와 포트로 열어야 지도가 뜬다. 지금 키는 `http://localhost:8800` 이다
+2. `python tools/sim_server.py sim 8800` 을 켜고 `http://localhost:8800/vworld3d.html` 을 연다
+3. 브라우저 개발자 도구 콘솔에서 부른다
+
+```
+await vwPrepare({ lon: 127.101707, lat: 37.470338 })        // 글자 끄기, 연기 피우기
+await vwSweep([250, 350, 450], 150, 0)                       // 거리별 한 장씩
+await vwApproach({ from: 1000, to: 200, speed: 15, bearing: 200, agl: 120 })
+```
+
+- 연기는 `sim/smoke.js` 로 그린다. V-World 가 장면 시계를 멈춰 Cesium 입자가 움직이지 않는다
+- 지형 높이는 V-World 지형에서 읽고, 타일이 다 뜰 때까지 기다린다
+- 프레임은 `sim/frames_<site>/` 에, 지형 격자는 `sim/terrain_<site>.json` 에 저장된다
+  (`tools/sim_server.py` 의 `?site=`). 저장소에는 `terrain_jagok.json`(index.html 의 Cesium
+  지형)과 `terrain_jagok3d.json`(V-World 지형)을 넣었다
+- `sim/index.html?site=jagok` 으로 열면 기존 시뮬레이터도 자곡동으로 뜬다
+- 다른 도구는 `SIM_SITE=jagok` 이면 자곡동 프레임과 지형을 쓴다(`src/geo/sim_terrain.py` 의 `sim_paths`)
+- 창을 숨기면 브라우저가 타이머를 늦춰 찍기가 멈춘다. 찍는 동안 창을 앞에 둔다
+
+### 신고 시나리오
+
+신고가 들어온 지점 둘레를 드론이 돌다 연기를 찾고, 추정 위치로 다가가는 흐름이다.
+드론은 정답을 모르고 시스템이 낸 추정 위치로만 움직인다.
+
+```
+await vwPrepare(FIRE)
+await vwSearch({ center: 신고지점, radius: 600, agl: 150, stepDeg: 10, speed: 15 })   // 신고 지점 둘레 수색
+await vwApproachTo({ from: 수색 끝 위치, target: 추정 위치, agl: 150, speed: 15, stop: 500, site: "leg1" })
+await vwApproachTo({ from: 접근 끝 위치, target: 새 추정 위치, agl: 150, speed: 15, stop: 150, site: "leg2" })
+```
+
+```
+python tools/join_scenario.py sim/frames_scenario sim/frames_search:0:2:SEARCH sim/frames_leg1 sim/frames_leg2
+python src/pipeline/run.py --weights runs/smoke_1260_960/weights/best.pt --frames sim/frames_scenario     --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json --no-merge --out results/pipeline_scenario
+python tools/make_demo_video.py results/pipeline_scenario results/demo_scenario sim/frames_scenario results/demo_scenario.mp4
+```
+
+`--sim-terrain` 은 run.py 에 들어 있다(밑동 가림 PR). 영상은 `tools/replay_alerts.py` 로 같은 알람이
+갱신되는 것처럼 대시보드에 한 단계씩 쓰고 크롬 헤드리스로 찍어 드론 화면과 나란히 붙인다.
+
+한 번 돌린 결과(발화점 37.468027, 127.103535, 신고 지점은 그 서쪽 약 280m)
+
+| 단계 | 결과 |
+|---|---|
+| 수색 | 14초에 탐지. 밑동이 아파트에 가려 추정이 254m 틀림, 미확정(반경 184m) |
+| 추정 위치로 접근 | 약 400m 에서 자연녹지 확정(오차 26m) |
+| 다시 겨눠 접근 | 166m 까지 다가가 반경 29m 로 확정 |
+
+수색 중 처음 낸 추정은 크게 틀렸지만 미확정이라 용도를 말하지 않았고, 다가가면서
+확정으로 바뀌었다. 반경 판정이 틀린 단정을 막는 장면이다.
+
+
+### 실시간 연결 (드론이 추정 위치를 따라간다)
+
+미리 찍어 두고 처리하는 대신, 드론이 날면서 장마다 최신 알람을 읽어 스스로 방향을 정한다.
+알람이 없으면 신고 지점 주변을 돌고, 알람이 생기면 그 추정 위치로 다가가 150m 앞에서 머문다.
+추정이 바뀌면 다음 장부터 새 위치로 방향을 튼다.
+
+추정은 장마다 수십 m씩 흔들려서 그대로 겨냥하면 화면이 좌우로 떨린다. 그래서 겨냥점은 새 추정 쪽으로
+20%만 옮기고(`aimBlend`), 카메라는 남은 각도의 절반씩, 한 장에 2°까지만 돌며 1°보다 작은 차이는
+무시한다(`maxTurnDeg`, `maxPitchDeg`, `deadDeg`).
+
+```
+python tools/sim_server.py sim 8800 results/live           # 세 번째 인자: 알람을 읽을 폴더 (GET /latest)
+python tools/live_estimate.py sim/frames_live results/live --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json
+python src/dashboard/server.py --out results/live --frames sim/frames_live --geo-dir data/geo_jagok --port 8820 --report 37.468913 127.10057
+```
+
+```
+await vwPrepare({ lat: 37.468027, lon: 127.102969 })
+await vwPursue({ center: { lat: 37.468913, lon: 127.10057 }, site: "live" })   // 멈추기: window.__pursueStop = true
+```
+
+`tools/live_estimate.py` 는 파이프라인의 프레임 폴더 지켜보기 모드(5.6)가 생기기 전까지 쓰는
+시험용이다. run.py 와 같은 함수로 장마다 위치와 판정을 내 `alerts/a-0001.json` 하나를 덮어쓰고,
+판정은 2장 연속 같을 때만 바꾼다. VLM 설명과 같은 사건 묶기는 하지 않는다. 장별 기록은
+`results/live/frames/` 에 남아 `tools/drone_overlay.py` 로 드론 화면 영상을 만들 수 있다.
+
+한 번 돌린 결과(발화점 37.468027, 127.102969, 신고 지점은 그 북서쪽 약 230m): 35초에 첫 탐지
+(미확정) 뒤 드론이 추정 위치로 다가가며 확정, 모호를 거쳐 마지막에 확정(반경 26m)이 됐다.
+마지막 추정은 실제 발화점에서 약 15m. 53장, 장면 시간 88초. 대시보드에도 같은 알람이 1초마다 갱신됐다.
+겨냥을 부드럽게 하기 전에는 접근 중 카메라가 한 장에 최대 6.3° 돌고 좌우로 8번 되돌아갔는데,
+바꾼 뒤에는 최대 1.9°, 되돌아감 1번이다.
+같은 설정으로 돌려도 V-World 화면이 매번 조금씩 달라 첫 탐지 시점은 14~35초로 달랐다.
+
+- 한 장 찍는 데 2~5초가 걸려(V-World 타일이 다 뜰 때까지 기다림) 실제 속도보다 느리다.
+  창을 숨기면 더 느려진다
+- V-World 인증키가 8800 포트로만 등록되어 시뮬레이터를 8800 에 띄운다. 대시보드는 다른 포트로 연다
