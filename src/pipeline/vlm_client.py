@@ -9,8 +9,13 @@ tools/run_structured.py와 같다. 바꾸면 비교 실험과 어긋나므로 �
     none   VLM을 부르지 않는다. 알람만 나가고 설명은 null로 남는다
     fake   고정된 사실을 돌려준다. 연결 확인용이며 결과로 쓰면 안 된다
     qwen   Qwen2.5-VL-3B 4bit(nf4 이중 양자화). GPU가 있으면 GPU, 없으면 CPU
+
+후보 검증기 (WBS 4.7, docs/vlm_base_pick.md)
+    p_smoke() 는 탐지 박스 주변을 잘라 "연기가 있는가"를 묻고 P(예)를 돌려준다.
+    설명과 같은 모델을 쓴다. tools/vlm_verify.py 와 질문, 자르기, 계산이 같다.
 """
 import json
+import threading
 import time
 
 SCHEMA = {
@@ -39,6 +44,24 @@ FAKE_OBSERVED = {"smoke_present": True, "smoke_color": "회색", "spread": "보�
 
 MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"
 
+VERIFY_PROMPT = "이 사진에 연기가 있는가. 예 또는 아니오로만 답하라."
+VERIFY_YES, VERIFY_NO = 127027, 52959    # "예", "아"(아니오의 첫 토큰), Qwen2.5-VL 토크나이저
+VERIFY_PX = 448
+
+
+def crop_det(img, bbox, margin=0.25, min_side=160):
+    """탐지 박스를 사방 25% 넓혀 정사각형으로 잘라 448px 로 키운다 (tools/vlm_verify.py 와 같음)."""
+    from PIL import Image
+    W, H = img.size
+    x, y, w, h = bbox
+    side = max(max(w, h) * (1 + 2 * margin), min_side)
+    cx, cy, half = x + w / 2, y + h / 2, side / 2
+    b = (int(cx - half), int(cy - half), int(cx + half), int(cy + half))
+    cv = Image.new("RGB", (b[2] - b[0], b[3] - b[1]), (128, 128, 128))
+    cv.paste(img.crop((max(b[0], 0), max(b[1], 0), min(b[2], W), min(b[3], H))),
+             (max(-b[0], 0), max(-b[1], 0)))
+    return cv.resize((VERIFY_PX, VERIFY_PX), Image.LANCZOS)
+
 
 def _tokenizer_data(tokenizer):
     """run_structured.py 와 같은 함수."""
@@ -63,6 +86,7 @@ class VLM:
         self.mode = mode
         self.device = None
         self.fake_sec = fake_sec      # fake 모드에서 VLM이 걸리는 시간을 흉내 낸다
+        self.lock = threading.Lock()  # 설명 스레드와 검증기가 같은 모델을 번갈아 쓴다
         if mode == "qwen":
             self._load(model_id)
         elif mode not in ("none", "fake"):
@@ -72,7 +96,9 @@ class VLM:
         import torch
         from transformers import AutoProcessor, AutoModelForImageTextToText, BitsAndBytesConfig
         gpu = torch.cuda.is_available()
-        dtype = torch.float16 if gpu else torch.float32   # CPU에서 float16은 느리거나 안 됨
+        # GPU에서 float16 계산은 어떤 입력에서 출력이 전부 NaN이 된다(docs/generation_methods.md).
+        # bf16은 메모리와 속도 차이 없이 이 문제가 없다(docs/quantization.md). CPU는 float32.
+        dtype = torch.bfloat16 if gpu else torch.float32
         self.device = "cuda:0" if gpu else "cpu"
         quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
                                    bnb_4bit_compute_dtype=dtype,
@@ -101,16 +127,16 @@ class VLM:
         image.thumbnail((1024, 1024))              # run_structured.py 와 같음
         msg = [{"role": "user", "content": [{"type": "image", "image": image},
                                             {"type": "text", "text": PROMPT}]}]
-        inputs = self.processor.apply_chat_template(
-            msg, add_generation_prompt=True, tokenize=True,
-            return_dict=True, return_tensors="pt").to(self.model.device)
         enforcer = TokenEnforcer(self.data, JsonSchemaParser(SCHEMA))
 
         def allow(batch_id, sent):
             allowed = enforcer.get_allowed_tokens(sent.tolist())
             return getattr(allowed, "allowed_tokens", allowed)
 
-        with torch.inference_mode():
+        with self.lock, torch.inference_mode():
+            inputs = self.processor.apply_chat_template(
+                msg, add_generation_prompt=True, tokenize=True,
+                return_dict=True, return_tensors="pt").to(self.model.device)
             o = self.model.generate(**inputs, max_new_tokens=120, do_sample=False,
                                     prefix_allowed_tokens_fn=allow)
         raw = self.processor.decode(o[0][inputs["input_ids"].shape[1]:],
@@ -123,3 +149,31 @@ class VLM:
         except Exception:
             ob = None
         return ob, ms, raw
+
+    def p_smoke(self, image_path, bbox):
+        """탐지 하나가 연기인지 P(예)/(P(예)+P(아니오)). (확률, 걸린 ms). none 이면 (None, None)."""
+        t0 = time.perf_counter()
+        if self.mode == "none":
+            return None, None
+        if self.mode == "fake":
+            return 1.0, 0
+        import torch
+        from PIL import Image
+        img = Image.open(image_path).convert("RGB")
+        crop = crop_det(img, bbox, min_side=max(160, img.size[0] // 6))
+        ip = self.processor.image_processor
+        with self.lock:
+            old = (ip.max_pixels, ip.min_pixels)
+            ip.max_pixels, ip.min_pixels = VERIFY_PX * VERIFY_PX, 256 * 256
+            try:
+                msg = [{"role": "user", "content": [{"type": "image", "image": crop},
+                                                    {"type": "text", "text": VERIFY_PROMPT}]}]
+                inp = self.processor.apply_chat_template(
+                    msg, add_generation_prompt=True, tokenize=True,
+                    return_dict=True, return_tensors="pt").to(self.model.device)
+                with torch.inference_mode():
+                    pr = torch.softmax(self.model(**inp).logits[0, -1].float(), -1)
+            finally:
+                ip.max_pixels, ip.min_pixels = old
+        y, n = float(pr[VERIFY_YES]), float(pr[VERIFY_NO])
+        return y / (y + n), round((time.perf_counter() - t0) * 1000)

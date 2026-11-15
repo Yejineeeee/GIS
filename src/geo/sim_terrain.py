@@ -20,8 +20,24 @@ Dem 과 같은 height(x, y) 를 가지므로 transform.to_position(..., dem=t) �
 """
 import json
 import math
+import os
+from pathlib import Path
 
 from query import to_5179
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def sim_paths():
+    """시연 지역별 시뮬레이터 파일. 환경변수 SIM_SITE=jagok 이면 자곡동 것을 쓴다.
+
+    (프레임 폴더, 지형 격자, 검증기 결과 폴더)
+    """
+    site = (os.environ.get("SIM_SITE") or "").strip()
+    if not site:
+        return ROOT / "sim" / "frames", ROOT / "sim" / "terrain.json", ROOT / "runs" / "verify"
+    return (ROOT / "sim" / f"frames_{site}", ROOT / "sim" / f"terrain_{site}.json",
+            ROOT / "runs" / f"verify_{site}")
 
 
 class SimTerrain:
@@ -56,6 +72,16 @@ class SimTerrain:
 
     def _at(self, i, j):
         return self.h[i * self.n + j]
+
+    cell = None          # query.py 가 dem_resolution_m 에 쓴다
+
+    def slope_deg(self, x, y, d=30.0):
+        """지면 경사(도). 둘레 d m 높이 차로 어림한다."""
+        hs = [self.height(x + dx, y + dy) for dx, dy in ((d, 0), (-d, 0), (0, d), (0, -d))]
+        if any(h is None for h in hs):
+            return None
+        gx, gy = (hs[0] - hs[1]) / (2 * d), (hs[2] - hs[3]) / (2 * d)
+        return math.degrees(math.atan(math.hypot(gx, gy)))
 
     def height(self, x, y):
         lon, lat = self._lonlat(x, y)

@@ -76,7 +76,12 @@ def main():
     ap.add_argument("out", help="나올 파일 (보통 sim/buildings.geojson)")
     ap.add_argument("--radius", type=float, default=RADIUS_M,
                     help="발화점에서 자를 거리, 미터 (기본 %(default)s)")
+    ap.add_argument("--fire", nargs=2, type=float, metavar=("LON", "LAT"),
+                    help="발화점 (기본은 모래고개입구. 자곡동은 127.101707 37.470338)")
     args = ap.parse_args()
+    if args.fire:
+        global FIRE_LON, FIRE_LAT
+        FIRE_LON, FIRE_LAT = args.fire
 
     with open(args.src, encoding="utf-8") as fh:
         src = json.load(fh)

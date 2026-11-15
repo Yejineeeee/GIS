@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>V-World 3D 시험</title>
+<style>html,body{margin:0;height:100%}#map{width:100%;height:100vh}#note{position:absolute;top:8px;left:8px;background:#fff;padding:6px;font:14px sans-serif;z-index:99}</style>
+</head><body><div id="note">준비 중</div><div id="map"></div>
+<script src="vworld_key.js"></script>
+<script>
+// 이 스크립트는 document.write 로 엔진을 불러오므로 파싱 중에 넣어야 한다
+document.write('<script src="https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&apiKey=' + encodeURIComponent(window.VWORLD_KEY || "") + '"><\/script>');
+</script>
+<script src="smoke.js"></script>
+<script src="vworld_sim.js"></script>
+<script>
+// V-World WebGL 3.0 (Cesium 기반) 으로 자곡동을 띄우고 연기를 피울 수 있는지 보는 시험 페이지.
+// 키는 저장소에 없는 vworld_key.js 에서 읽는다.
+const FIRE = { lon: 127.101707, lat: 37.470338 };
+window.addEventListener("load", () => {
+  try {
+    const map = new vw.Map();
+    map.setOption({ mapId: "map", logo: true, navigation: false,
+      initPosition: new vw.CameraPosition(new vw.CoordZ(FIRE.lon, FIRE.lat - 0.0027, 170), new vw.Direction(0, -22, 0)) });
+    map.start();
+    window.__map = map;
+    const wait = setInterval(() => {
+      if (window.ws3d && ws3d.viewer) {
+        clearInterval(wait);
+        window.viewer = ws3d.viewer;
+        document.getElementById("note").textContent = "V-World 3D 뷰어 준비됨 (Cesium " + (Cesium.VERSION || "?") + ")";
+      }
+    }, 300);
+  } catch (e) { document.getElementById("note").textContent = "오류: " + e.message; }
+});
+
+// 시뮬레이터(index.html)와 같은 방식의 입자 연기
+function puff() {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d"), r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  r.addColorStop(0, "rgba(235,235,235,0.9)"); r.addColorStop(1, "rgba(235,235,235,0)");
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64); return c.toDataURL();
+}
+async function lightSmoke(lon, lat, agl) {
+  const h = (await Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [Cesium.Cartographic.fromDegrees(lon, lat)]))[0].height || 0;
+  const pos = Cesium.Cartesian3.fromDegrees(lon, lat, h + agl);
+  const ps = new Cesium.ParticleSystem({
+    image: puff(), startColor: Cesium.Color.WHITE.withAlpha(0.12), endColor: Cesium.Color.WHITE.withAlpha(0.0),
+    startScale: 1.0, endScale: 6.0, minimumParticleLife: 8, maximumParticleLife: 14,
+    minimumSpeed: 2, maximumSpeed: 5, imageSize: new Cesium.Cartesian2(20, 20), emissionRate: 40,
+    emitter: new Cesium.ConeEmitter(Cesium.Math.toRadians(20)),
+    modelMatrix: Cesium.Transforms.eastNorthUpToFixedFrame(pos), lifetime: 1e9 });
+  viewer.scene.primitives.add(ps); window.__smoke = ps; return h;
+}
+async function snap(name) {
+  for (let i = 0; i < 10; i++) { viewer.scene.render(); await new Promise(r => setTimeout(r, 100)); }
+  viewer.scene.render();
+  const res = await fetch("/frame?site=vworld3d", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ png: viewer.canvas.toDataURL("image/png"), meta: { note: name } }) });
+  return (await res.json()).saved;
+}
+</script></body></html>
