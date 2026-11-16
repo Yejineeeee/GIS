@@ -1,0 +1,121 @@
+﻿px,i,orig,sent,sec,prompt_n,prompt_ms,predicted_n,predicted_ms,smoke,rss_gb,text
+300,30,684x638,300x280,10.6,194,8217.32,34,2378.272,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,36,360x300,300x250,9.74,183,7260.376,35,2458.25,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,41,460x690,200x300,7.65,161,5355.824,34,2274.529,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,47,172x338,153x300,6.6,139,4297.774,34,2295.354,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,53,1282x804,300x188,7.84,161,5613.043,34,2218.697,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,60,404x256,300x190,7.78,161,5393.237,35,2382.5,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,65,376x518,218x300,7.73,172,5465.654,34,2263.742,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,70,472x568,249x300,8.38,183,6043.062,34,2333.277,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,75,2692x1304,300x145,7.17,139,4856.096,34,2309.294,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,80,2144x384,300x54,4.81,106,2530.036,34,2271.452,False,5.12,"{
+  ""smoke_present"": false,
+  ""smoke_color"": ""없음"",
+  ""flame_visible"": false
+}"
+300,86,108x96,108x96,4.74,96,2383.898,34,2354.068,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+300,91,956x416,300x131,6.39,139,4066.853,35,2322.21,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,30,684x638,360x336,11.37,240,8990.749,34,2357.843,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,36,360x300,360x300,11.4,227,8877.27,35,2514.759,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,41,460x690,240x360,9.96,201,7620.986,34,2334.935,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,47,172x338,172x338,7.88,156,5539.06,34,2341.18,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,53,1282x804,360x226,9.29,188,6868.046,34,2413.721,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,60,404x256,360x228,9.05,188,6601.248,35,2440.95,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,65,376x518,261x360,9.92,201,7472.5,34,2438.292,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,70,472x568,299x360,10.54,227,8223.871,34,2312.963,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,75,2692x1304,360x174,8.0,162,5545.961,35,2426.38,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,80,2144x384,360x64,5.37,110,3107.689,34,2257.428,False,5.12,"{
+  ""smoke_present"": false,
+  ""smoke_color"": ""없음"",
+  ""flame_visible"": false
+}"
+360,86,108x96,108x96,4.72,96,2334.499,34,2379.338,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"
+360,91,956x416,360x157,8.01,162,5496.846,35,2509.303,True,5.12,"{
+  ""smoke_present"": true,
+  ""smoke_color"": ""검은색"",
+  ""flame_visible"": false
+}"

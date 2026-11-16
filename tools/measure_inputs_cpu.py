@@ -22,6 +22,9 @@ tools/measure_short.py 와 같은 방식이다. llama-server(GGUF Q4_K_M, 스레
     flame+      crop 을 한 직후 같은 조각에 불꽃 질문 (캐시 유지). 설명 뒤에 덧붙일 때 드는 시간
 
 조각은 탐지 상자를 모두 감싼 상자 그대로다(tools/prep_crops.py 의 여백 1배, 최소 96px).
+--crop-px 로 조각의 긴 변 상한을 준다(기본 1024). 긴 변 360 을 잴 때:
+
+    python tools/measure_inputs_cpu.py ... --conds crop --crop-px 360 --n 12 --runs 1
 """
 import argparse
 import base64
@@ -103,6 +106,7 @@ def main():
     ap.add_argument("--runs", type=int, default=2)
     ap.add_argument("--conds", nargs="+",
                     default=["crop", "flame+", "flame", "small+crop", "full", "full+crop"])
+    ap.add_argument("--crop-px", type=int, default=1024, help="조각의 긴 변 상한")
     a = ap.parse_args()
 
     from PIL import Image
@@ -127,7 +131,7 @@ def main():
             w, h = max(x1 - x0, MIN_SIDE), max(y1 - y0, MIN_SIDE)
             crop = img.crop((max(0, int(cx - w / 2)), max(0, int(cy - h / 2)),
                              min(W, int(cx + w / 2)), min(H, int(cy + h / 2))))
-            crop.thumbnail((1024, 1024))
+            crop.thumbnail((a.crop_px, a.crop_px))
             full = img.copy()
             full.thumbnail((1024, 1024))
             small = img.copy()
