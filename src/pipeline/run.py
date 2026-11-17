@@ -9,13 +9,13 @@
 
     # 방법 1) 사진을 넣고 탐지부터 한 번에 (가중치 필요)
     python src/pipeline/run.py --frames 사진폴더 --weights best.pt \
-        --geo-dir data/geo_moraegogae --vlm fake
+        --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json --vlm fake
 
     # 방법 2) 미리 만든 탐지 결과 JSON을 넣기
     python tools/replay.py --images 사진폴더 --out results/replay --no-sleep \
         --lat 37.73679 --lon 128.906239
     python src/pipeline/run.py --detections results/replay --frames 사진폴더 \
-        --geo-dir data/geo_moraegogae --vlm fake
+        --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json --vlm fake
 
     # 대시보드(5.5)를 같이 켜 두면 알람이 지도에 바로 뜬다
     python src/dashboard/server.py --out results/pipeline
@@ -47,7 +47,12 @@
       만든다. 알람이 뜨는 시각은 검증기가 없을 때와 같고, 밭이나 비닐하우스 같은 헛탐지
       자리에 찍힌 알람은 몇 초 뒤 연기 자리로 옮겨진다
     - 같은 사건이 여러 프레임에 잡히면 알람을 하나만 낸다. 새 탐지 위치가 이미 낸
-      알람의 오차 원과 겹치면 같은 사건으로 본다. 알람 갱신·해제는 향후 과제
+      알람의 오차 원과 겹치면 같은 사건으로 본다
+    - 알람 갱신(11/15): 같은 사건의 새 탐지가 오차 반경을 지금 알람의 80% 이하로 줄이면
+      같은 alert_id 로 위치, 반경, 용도, 판정을 고쳐 다시 내고 설명도 새로 만든다.
+      같은 사건으로 묶는 원은 처음 알람 것을 그대로 쓴다.
+      드론이 다가갈수록 미확정 → 확정으로 바뀌는 장면이 이것이다. 반경이 줄 때만 고치므로
+      판정이 앞뒤로 흔들리지 않는다. --no-update 로 끈다. 알람 해제는 향후 과제
 """
 import argparse
 import glob
@@ -73,6 +78,7 @@ from vlm_client import VLM                  # noqa: E402
 from alert import (Publisher, Describer,    # noqa: E402  5.4
                    make_alert, ms, now_iso)
 
+UPDATE_RATIO = 0.8   # 알람 갱신: 새 반경이 지금 반경의 이 비율 이하일 때만 고친다
 VERIFY_TAU = 0.7     # 후보 검증기 문턱 (docs/vlm_base_pick.md, 시뮬레이터에서 정하고 실제 사진으로 확인)
 
 
@@ -146,7 +152,7 @@ def main():
     ap.add_argument("--detections", help="탐지 결과 JSON 폴더 (--weights 대신)")
     ap.add_argument("--weights", help="분할 모델 가중치(best.pt). 주면 --frames 사진을 직접 탐지")
     ap.add_argument("--frames", help="사진 폴더")
-    ap.add_argument("--geo-dir", default="data/geo_moraegogae")
+    ap.add_argument("--geo-dir", default="data/geo_jagok")
     ap.add_argument("--landuse", help="landuse_5179.geojson (기본: geo-dir 안)")
     ap.add_argument("--buildings", help="buildings_5179.geojson (기본: geo-dir 안, 없으면 건너뜀)")
     ap.add_argument("--dem", nargs="*", help="DEM IMG 파일들 (기본: geo-dir 안 *.img)")
@@ -157,6 +163,8 @@ def main():
     ap.add_argument("--interval", type=float, default=0.0,
                     help="프레임 사이 대기(초). 실제 속도처럼 보려면 1~2")
     ap.add_argument("--no-merge", action="store_true", help="같은 사건 묶기를 끈다")
+    ap.add_argument("--no-update", action="store_true",
+                    help=f"알람 갱신을 끈다 (기본: 같은 사건의 반경이 {int(UPDATE_RATIO * 100)}% 이하로 줄면 같은 알람을 고쳐 다시 냄)")
     ap.add_argument("--no-verify", action="store_true", help="후보 검증기를 끈다 (VLM 이 있을 때만 켜짐)")
     ap.add_argument("--no-occlusion", action="store_true", help="밑동 가림 판단(지형)을 끈다")
     ap.add_argument("--sim-terrain", help="DEM 대신 시뮬레이터 지형 격자(sim/terrain_*.json)를 쓴다. DEM 이 없는 지역용")
@@ -227,8 +235,11 @@ def main():
         print(f"[준비] 후보 검증기 켬: 알람은 conf 1등으로 먼저 내고, P(예) {VERIFY_TAU} 이상인 "
               f"탐지로 위치를 고쳐 다시 낸다" + (" (차례대로)" if a.sync else " (따로 도는 스레드에서)"))
     stats = {"frames": 0, "detections": 0, "alerts": 0, "merged": 0, "fail": 0, "verify_skip": 0,
-             "relocated": 0, "verify_saved": 0, "occluded": 0, "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "truth_err": {}}
+             "relocated": 0, "verify_saved": 0, "occluded": 0, "updated": 0, "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "truth_err": {}}
     lock = threading.Lock()      # events, stats 를 검증 스레드와 같이 쓴다
+    latest = {}                  # alert_id -> 마지막으로 낸 알람 (갱신할 때 고쳐 쓴다)
+    if describer:
+        describer.current = lambda aid: (latest.get(aid) or {}).get("detection_id")
     t_run = time.perf_counter()
 
     def transform(frame, det):
@@ -277,12 +288,22 @@ def main():
             same = None if a.no_merge else next(
                 (ev for ev in events if dist_m(ev[0], ev[1], position["lat"], position["lon"])
                  <= max(ev[2], position["error_radius_m"])), None)
-            if same:
+            # 갱신은 지금 알람의 반경과 비교한다. 같은 사건으로 묶는 원(events)은 처음 것 그대로 두어,
+            # 반경이 줄었다고 같은 연기의 다른 조각이 새 알람으로 떨어져 나가지 않게 한다
+            cur_r = same and same[3] in latest and latest[same[3]]["position"]["error_radius_m"]
+            better = bool(cur_r) and not a.no_update and position["error_radius_m"] <= cur_r * UPDATE_RATIO
+            if better:
+                old_r = cur_r
+                stats["updated"] += 1
+            elif same:
                 stats["merged"] += 1
             else:
                 stats["alerts"] += 1
                 alert_id = f"a-{stats['alerts']:04d}"
                 events.append([position["lat"], position["lon"], position["error_radius_m"], alert_id])
+        if better:
+            update(same[3], old_r, frame, det, position, tinfo, t_tr, err, t_frame, det_ms, stem, image)
+            return None
         if same:
             pub.note(detection_id=det.get("id"), stage="묶음", alert_id=same[3], truth_error_m=err)
             print(f"  {det.get('id')}: {same[3]}과 같은 사건으로 묶음"
@@ -298,6 +319,7 @@ def main():
         pub.send(alert)
         t_alert = time.perf_counter()
         with lock:
+            latest[alert_id] = alert
             stats["verdict"][verdict] += 1
             if err is not None:
                 stats["truth_err"][alert_id] = (err, position["error_radius_m"])
@@ -312,6 +334,34 @@ def main():
         if describe and describer:            # 설명은 따로 (5.4)
             describer.submit(alert, image, t_alert)
         return alert, t_alert
+
+    def update(aid, old_r, frame, det, position, tinfo, t_tr, err, t_frame, det_ms, stem, image):
+        """알람 갱신: 같은 사건을 더 좁은 반경으로 다시 짚었다. 같은 alert_id 로 고쳐 다시 낸다."""
+        land_use, evidence, qinfo, verdict, thr, t_q, t_v = lookup(position, tinfo)
+        with lock:
+            alert = latest[aid]
+            old_verdict, old_det = alert["location_verdict"], alert["detection_id"]
+            alert.update({"time": now_iso(), "detection_id": det.get("id"), "position": position,
+                          "location_verdict": verdict, "land_use": land_use, "evidence": evidence,
+                          "verdict_rule": {"rule": RULE, "threshold": thr, "samples": qinfo["n_points"]},
+                          "observed": None, "description": None, "description_method": None})
+            alert["latency_ms"].update({"detect": det_ms, "geo_transform": t_tr, "geo_query": t_q, "verdict": t_v,
+                                        "vlm": None, "detect_to_alert": det_ms + ms(t_frame),
+                                        "alert_to_description": None})
+            stats["verdict"][old_verdict] -= 1
+            stats["verdict"][verdict] += 1
+            if err is not None:
+                stats["truth_err"][aid] = (err, position["error_radius_m"])
+            snap = json.loads(json.dumps(alert))
+        pub.send(snap)
+        t_alert = time.perf_counter()
+        pub.note(alert_id=aid, stage="알람 갱신", from_detection=old_det, to_detection=det.get("id"),
+                 from_radius_m=old_r, transform=tinfo, query=qinfo, truth_error_m=err, frame=stem,
+                 score=det.get("score"))
+        print(f"  {aid} 갱신 [{old_verdict}→{verdict}] {det.get('id')}  반경 {old_r}m → {position['error_radius_m']}m"
+              + (f"  정답과 {err}m" if err is not None else ""))
+        if describer:                   # 위치와 판정이 바뀌었으니 설명도 새로 만든다
+            describer.submit(snap, image, t_alert)
 
     def relocate(alert, frame, det, truth, t_alert):
         """검증기가 고른 탐지로 같은 alert_id 의 위치와 판정을 고쳐 다시 낸다."""
@@ -432,7 +482,7 @@ def main():
     print(f"  프레임 {stats['frames']}, 탐지 {stats['detections']}, 알람 {stats['alerts']} "
           f"(같은 사건으로 묶음 {stats['merged']}, 좌표 변환 실패 {stats['fail']}, "
           f"검증기 미통과 {stats['verify_skip']}, 검증기로 위치 수정 {stats['relocated']}, "
-          f"밑동 가림으로 위치 수정 {stats['occluded']}, "
+          f"밑동 가림으로 위치 수정 {stats['occluded']}, 알람 갱신 {stats['updated']}, "
           f"묶여서 검증 생략 {stats['verify_saved']})")
     print("  판정: " + ", ".join(f"{k} {v}" for k, v in stats["verdict"].items()))
     print(f"  마지막 알람까지 {t_alerts_done}ms, 설명까지 포함 {ms(t_run)}ms")

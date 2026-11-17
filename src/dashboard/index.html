@@ -5,236 +5,327 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>엣지아이 관제</title>
 <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<!-- 글꼴: Noto Sans KR, Barlow (SIL OFL). 인터넷이 없으면 아래 font-family 의 시스템 글꼴로 뜬다 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
 <style>
+  /* 시안 A-3 (Figma "엣지아이 관제 대시보드") */
   :root {
-    --bg: #0E1217; --bar: #12171E; --panel: #151A21; --card: #171D25; --chip: #1E2630;
-    --line: #263040; --line2: #33404F; --ink: #E8ECF1; --ink2: #C9D2DC; --muted: #93A0B0;
-    --confirm: #FF6A4D; --confirm-ink: #FF8A73; --ambig: #F2B33D; --unsure: #8C97A6; --unsure-ink: #A9B3C0;
-    --accent: #5BC0EB;
+    --bg: #EEEEEC; --card: #FFFFFF; --soft: #F2F2F0; --line: rgba(10,10,10,.09); --track: #D3D3D0;
+    --ink: #0A0A0A; --ink2: #2A2A2A; --muted: #6B6B6B; --faint: #B5B5B2;
+    --confirm: #E10600; --ambig: #E59A00; --unsure: #8A8A87; --ok: #0E9F4A; --live: #1FA855;
+    --shadow: 0 4px 14px rgba(0,0,0,.06);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body { background: var(--bg); color: var(--ink); font: 14px/1.5 "IBM Plex Sans KR", "Pretendard", "Malgun Gothic",
-         "Apple SD Gothic Neo", system-ui, sans-serif; display: flex; flex-direction: column; }
-  button { font: inherit; }
-  .num { font-family: "JetBrains Mono", ui-monospace, "Consolas", monospace; font-variant-numeric: tabular-nums; }
+  body { background: var(--bg); color: var(--ink); letter-spacing: -0.01em;
+         font: 14px/1.5 "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+         display: grid; grid-template-columns: 372px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 24px; padding: 24px; }
+  button { font: inherit; color: inherit; }
+  .num { font-family: "Barlow", "Noto Sans KR", sans-serif; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 
-  /* 상단 바 */
-  header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 28px; padding: 12px 20px;
-           background: var(--bar); border-bottom: 1px solid var(--line); }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .brand strong { font-size: 16px; font-weight: 700; letter-spacing: -0.2px; display: block; line-height: 1.25; }
-  .brand small { font-size: 12px; color: var(--muted); }
-  .kpis { display: flex; flex-wrap: wrap; }
-  .kpi { display: flex; flex-direction: column; padding: 4px 14px; }
-  .kpi.sep { border-right: 1px solid var(--line); }
-  .kpi span:first-child { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-  .kpi .v { font-size: 20px; font-weight: 600; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .right { margin-left: auto; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  .perf { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
-  .perf b { color: var(--ink); font-weight: 600; }
-  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink2); cursor: pointer; min-height: 36px; }
-  .check input { width: 16px; height: 16px; accent-color: var(--accent); }
-  .live { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--line);
-          border-radius: 99px; font-size: 12px; color: var(--ink2); }
-  .live .dot { background: var(--accent); animation: pl 2s ease-out infinite; }
-  .live.off { color: var(--confirm-ink); border-color: var(--confirm); }
-  .live.off .dot { background: var(--confirm); animation: none; }
-  @keyframes pl { 0% { box-shadow: 0 0 0 0 rgba(91,192,235,.55); } 100% { box-shadow: 0 0 0 8px rgba(91,192,235,0); } }
+  /* ---------- 왼쪽 ---------- */
+  .left { display: flex; flex-direction: column; gap: 20px; min-height: 0; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand strong { font-size: 15px; font-weight: 700; }
+  .live { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 5px 12px 5px 10px; border-radius: 99px;
+          background: var(--card); font-size: 12px; font-weight: 500; color: var(--ink2); }
+  .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--live); }
+  .live.off { color: var(--confirm); } .live.off i { background: var(--confirm); }
+  .where { font-size: 13px; color: var(--muted); margin: -4px 0 -8px; }
+  .hero { display: flex; align-items: center; gap: 14px; }
+  .hero .big { font-size: 104px; line-height: 100px; letter-spacing: -0.04em; }
+  .hero b { display: block; font-size: 24px; font-weight: 700; letter-spacing: -0.03em; }
+  .hero div span { font-size: 13px; color: var(--muted); }
 
-  /* 본문 */
-  main { flex: 1; display: flex; min-height: 0; }
-  .mapwrap { flex: 1; min-width: 0; position: relative; }
-  #map { position: absolute; inset: 0; background: #111820; }
-  #map.dark-tiles .leaflet-tile-pane { filter: invert(1) hue-rotate(185deg) brightness(.82) contrast(.92) saturate(.45); }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--card); border-radius: 18px; padding: 14px 16px 16px; }
+  .stat { display: flex; flex-direction: column; gap: 6px; border: 0; background: none; text-align: left; padding: 0 0 0 16px; cursor: pointer;
+          border-left: 1px solid var(--line); border-radius: 0; }
+  .stat:first-child { padding-left: 0; border-left: 0; }
+  .stat .lab { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+  .stat .lab i { width: 8px; height: 8px; border-radius: 50%; }
+  .stat .n { font-size: 40px; line-height: 44px; }
+  .stat .n.zero { color: var(--faint); }
+  .stat[aria-pressed="true"] .lab { color: var(--ink); font-weight: 700; }
+  .stat[aria-pressed="true"] .lab::after { content: "· 보는 중"; font-weight: 500; color: var(--muted); }
+  .stat:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; border-radius: 6px; }
+  .dots { display: flex; gap: 6px; } .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--track); }
+
+  .tlhead { display: flex; align-items: baseline; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+  .tlhead span { margin-left: auto; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+  .tl { flex: 1; min-height: 0; overflow-y: auto; margin: -4px -6px 0 0; padding: 4px 6px 4px 0; }
+  .item { display: grid; grid-template-columns: 58px 12px minmax(0, 1fr); gap: 0 12px; padding-bottom: 2px; position: relative; cursor: pointer;
+          width: 100%; border: 0; background: none; text-align: left; }
+  .item .t { font-size: 12px; font-weight: 500; color: var(--muted); padding-top: 14px; }
+  .item .rail { position: relative; }
+  .item .rail::before { content: ""; position: absolute; left: 5px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+  .item:first-child .rail::before { top: 18px; }
+  .item .rail::after { content: ""; position: absolute; left: 0; top: 16px; width: 12px; height: 12px; border-radius: 50%;
+                       box-sizing: border-box; border: 2px solid var(--vc); background: var(--bg); }
+  .item.sel .rail::after { background: var(--vc); }
+  .item .c { padding: 10px 14px; border-radius: 14px; display: flex; flex-direction: column; gap: 5px; }
+  .item.sel .c { background: var(--card); box-shadow: var(--shadow); }
+  .item:hover:not(.sel) .c { background: rgba(255,255,255,.55); }
+  .item:focus-visible { outline: none; } .item:focus-visible .c { outline: 2px solid var(--ink); }
+  .item .h { display: flex; align-items: center; gap: 8px; }
+  .item .id { font-size: 16px; }
+  .item .s { font-size: 13px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item.fresh .c { animation: fresh 2.4s ease-out; }
+  @keyframes fresh { from { background: #FFF1CC; } }
+  .empty { color: var(--muted); text-align: center; padding: 40px 8px; font-size: 13px; }
+  .upd { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 99px; background: var(--ink); color: #fff; white-space: nowrap; }
+  .hist { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .hist .st { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 99px; background: var(--soft); color: var(--ink2); }
+  .hist .st i { width: 7px; height: 7px; border-radius: 50%; background: var(--vc); }
+  .hist .st.now { background: var(--ink); color: #fff; }
+  .hist .ar { color: var(--faint); }
+  .report-pin { display: flex; flex-direction: column; align-items: center; }
+  .report-pin b { font: 700 11px/1 "Noto Sans KR", sans-serif; background: #0A0A0A; color: #fff; padding: 4px 7px; border-radius: 6px; white-space: nowrap; }
+  .report-pin i { width: 2px; height: 10px; background: #0A0A0A; }
+  .report-pin em { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 3px solid #0A0A0A; margin-top: -1px; }
+
+  .perf { display: flex; gap: 14px; }
+  .perf div { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
+  .perf b { font-size: 15px; color: var(--ink); }
+
+  /* ---------- 칩 ---------- */
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .vchip { font-size: 12px; font-weight: 700; padding: 1px 9px; border-radius: 99px; color: #fff; background: var(--vc); white-space: nowrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 2px 10px 2px 8px; border-radius: 99px; white-space: nowrap; }
+  .chip.risk { background: var(--card); box-shadow: inset 0 0 0 1px rgba(10,10,10,.14); }
+  .chip.risk.확인 { color: var(--muted); }
+  .chip.risk em { display: flex; gap: 2.5px; } .chip.risk em i { width: 7px; height: 7px; border-radius: 50%; background: var(--track); }
+  .chip.vlm { background: var(--soft); }
+  .chip.vlm.wait { color: var(--muted); }
+  .chip.vlm svg { flex: none; }
+
+  /* ---------- 지도 카드 ---------- */
+  .mapcard { position: relative; border-radius: 24px; overflow: hidden; background: #E4E4E0; min-height: 0; }
+  #map { position: absolute; inset: 0; background: #E4E4E0; }
+  #map.tint .leaflet-tile-pane { filter: saturate(.35) brightness(1.04) contrast(.95); }
   .leaflet-container { font: inherit; }
-  .leaflet-control-zoom a { background: var(--panel) !important; color: var(--ink) !important; border-color: var(--line) !important;
-                            width: 40px !important; height: 40px !important; line-height: 40px !important; }
-  .leaflet-control-zoom { border: 1px solid var(--line) !important; border-radius: 10px !important; overflow: hidden; }
-  .leaflet-control-scale-line { background: rgba(21,26,33,.85); color: var(--ink2); border-color: var(--ink2); }
-  .leaflet-control-attribution { background: rgba(14,18,23,.7) !important; color: var(--muted) !important; }
-  .leaflet-control-attribution a { color: var(--ink2) !important; }
-  .leaflet-tooltip.callout { background: var(--panel); color: var(--ink); border: 1px solid var(--line2); border-radius: 8px;
-                             box-shadow: 0 6px 18px rgba(0,0,0,.35); padding: 6px 10px; font-size: 13px; }
-  .leaflet-tooltip.callout::before { border-top-color: var(--line2); }
-  .leaflet-tooltip.callout small { display: block; color: var(--muted); font-size: 12px; }
-  .leaflet-tooltip.lu { background: var(--panel); color: var(--ink2); border-color: var(--line); font-size: 12px; }
+  .leaflet-control-zoom { border: 0 !important; border-radius: 14px !important; overflow: hidden; box-shadow: var(--shadow) !important; margin: 76px 20px 0 0 !important; }
+  .leaflet-control-zoom a { width: 40px !important; height: 40px !important; line-height: 40px !important; color: var(--ink) !important; border-color: var(--line) !important; }
+  .leaflet-control-scale-line { background: rgba(255,255,255,.85); border-color: var(--ink2); color: var(--ink2); }
+  .leaflet-control-attribution { background: rgba(255,255,255,.8) !important; color: var(--muted) !important; border-radius: 6px 0 0 0; }
+  .leaflet-tooltip.callout { background: var(--card); color: var(--ink); border: 0; border-radius: 12px; box-shadow: var(--shadow); padding: 7px 11px; font-size: 13px; font-weight: 500; }
+  .leaflet-tooltip.callout small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+  .leaflet-tooltip.lu { border-radius: 8px; font-size: 12px; }
 
-  .float { position: absolute; z-index: 500; background: rgba(21,26,33,.94); border: 1px solid var(--line); border-radius: 12px; }
-  .layers { top: 16px; right: 16px; width: 220px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-  .label { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .3px; }
-  .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 3px; background: var(--bg); border-radius: 8px; }
-  .seg button { min-height: 34px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; }
-  .seg button[aria-pressed="true"] { background: var(--line); color: var(--ink); font-weight: 600; }
-  .seg button:disabled { opacity: .45; cursor: not-allowed; }
-  .legend { left: 16px; bottom: 28px; padding: 12px 14px; display: flex; gap: 24px; flex-wrap: wrap; max-width: calc(100% - 32px); }
-  .legend .row { display: flex; gap: 12px; font-size: 12px; color: var(--ink2); flex-wrap: wrap; margin-top: 6px; }
-  .legend .row span { display: flex; align-items: center; gap: 6px; }
-  .ring { width: 12px; height: 12px; border-radius: 50%; border: 2px solid; }
-  .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .ui { position: absolute; z-index: 600; }
+  .chipsbar { left: 20px; top: 20px; display: flex; gap: 6px; flex-wrap: wrap; max-width: calc(100% - 240px); }
+  .tog { display: flex; align-items: center; gap: 6px; padding: 7px 14px 7px 12px; border-radius: 99px; border: 0; cursor: pointer;
+         background: var(--card); box-shadow: inset 0 0 0 1px rgba(10,10,10,.15); font-size: 13px; font-weight: 500; }
+  .tog::before { content: "+"; font-weight: 700; }
+  .tog[aria-pressed="true"] { background: var(--ink); color: #fff; box-shadow: none; }
+  .tog[aria-pressed="true"]::before { content: "✓"; }
+  .tog:focus-visible, .seg button:focus-visible { outline: 2px solid var(--confirm); outline-offset: 2px; }
+  .legend { left: 20px; top: 68px; display: flex; gap: 12px; padding: 6px 14px 6px 12px; border-radius: 99px; background: rgba(255,255,255,.92);
+            box-shadow: inset 0 0 0 1px rgba(10,10,10,.08); font-size: 12px; color: var(--ink2); flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 5px; } .legend i { width: 10px; height: 10px; border-radius: 3px; }
+  .seg { right: 20px; top: 20px; display: flex; gap: 2px; padding: 4px; border-radius: 99px; background: var(--card); box-shadow: var(--shadow); }
+  .seg button { border: 0; background: none; padding: 6px 14px; border-radius: 99px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--soft); color: var(--ink); font-weight: 700; }
+  .seg button:disabled { opacity: .4; cursor: not-allowed; }
 
-  /* 알람 목록 */
-  aside { width: 420px; flex: none; background: var(--bar); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-  .ahead { padding: 16px 16px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
-  .ahead h2 { margin: 0; font-size: 16px; font-weight: 700; display: inline; }
-  .ahead small { font-size: 12px; color: var(--muted); margin-left: 8px; }
-  .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 3px; background: var(--bg); border-radius: 10px; }
-  .filters button { min-height: 36px; border: 0; border-radius: 8px; background: transparent; color: var(--ink2); cursor: pointer; font-size: 13px; }
-  .filters button[aria-pressed="true"] { background: var(--line); color: var(--ink); font-weight: 600; }
-  #list { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-  .empty { color: var(--muted); text-align: center; padding: 48px 12px; }
-
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
-          display: flex; flex-direction: column; gap: 8px; cursor: pointer; text-align: left; color: inherit; width: 100%; }
-  .card:hover { border-color: var(--line2); }
-  .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .card.open { padding: 14px; gap: 12px; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,192,235,.15); cursor: default; }
-  .card.fresh { animation: fresh 2.4s ease-out; }
-  @keyframes fresh { from { background: #22303D; } to { background: var(--card); } }
-  .top { display: flex; align-items: center; gap: 8px; }
-  .top .id { font-weight: 600; }
-  .top .t { margin-left: auto; font-size: 12px; color: var(--muted); }
-  .pill { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 99px; }
-  .pill.확정 { background: rgba(255,106,77,.16); color: var(--confirm-ink); }
-  .pill.모호 { background: rgba(242,179,61,.16); color: var(--ambig); }
-  .pill.미확정 { background: rgba(140,151,166,.18); color: var(--unsure-ink); }
-  .desc { margin: 0; font-size: 13px; color: var(--ink2); }
-  .card:not(.open) .desc { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-  .card.open .desc { font-size: 15px; line-height: 1.6; color: var(--ink); }
-  .pending { display: flex; flex-direction: column; gap: 6px; }
-  .pending .msg { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--accent); }
-  .pending .msg svg { animation: spin 1.2s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .shimmer { height: 10px; border-radius: 4px; background: linear-gradient(90deg, #1E2630 0%, #2A3441 50%, #1E2630 100%);
-             background-size: 200% 100%; animation: sh 1.6s linear infinite; }
-  @keyframes sh { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-  .warn { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: rgba(242,179,61,.12); color: #F2C66B; font-size: 12px; }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--ink2); }
-  .chips span { padding: 3px 8px; border-radius: 6px; background: var(--chip); }
-  .chips b, .lu-row b { font-weight: 600; }
-  .stack { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--bg); }
-  .lu-row { display: flex; gap: 12px; font-size: 12px; color: var(--ink2); flex-wrap: wrap; margin-top: 6px; }
-  .lu-row i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
-  .shot { position: relative; border-radius: 8px; overflow: hidden; background: var(--bg); }
+  /* ---------- 선택한 알람 시트 ---------- */
+  .sheet { left: 20px; right: 20px; bottom: 20px; background: var(--card); border-radius: 20px; box-shadow: var(--shadow);
+           display: grid; grid-template-columns: 268px minmax(0, 1fr); gap: 20px; padding: 16px 24px 16px 16px; }
+  .sheet[hidden] { display: none; }
+  .shot { position: relative; border-radius: 14px; overflow: hidden; background: var(--soft); aspect-ratio: 4 / 3; align-self: start; }
   .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .shot .box { position: absolute; border: 2px solid var(--confirm); border-radius: 3px; }
-  .shot .score { position: absolute; transform: translateY(-100%); font-size: 11px; font-weight: 600; padding: 1px 6px;
-                 border-radius: 4px 4px 4px 0; background: var(--confirm); color: #1A0E0B; white-space: nowrap; }
-  .shot .cap { position: absolute; left: 8px; bottom: 8px; font-size: 12px; padding: 2px 8px; border-radius: 6px; background: rgba(14,18,23,.8); color: var(--ink2); }
-  .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-  .metrics div { background: var(--chip); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; }
-  .metrics span { font-size: 11px; color: var(--muted); }
-  .metrics b { font-size: 15px; font-weight: 600; }
-  .flow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-  .flow span { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .flow b { color: var(--ink); font-weight: 600; }
-  .flow hr { flex: 1; border: 0; height: 1px; background: var(--line2); margin: 0; }
+  .shot.dim img { opacity: .6; }
+  .shot .box { position: absolute; border: 2px solid var(--confirm); border-radius: 3px; background: rgba(225,6,0,.12); }
+  .shot .score { position: absolute; transform: translateY(-100%); margin-top: -3px; font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--confirm); color: #fff; white-space: nowrap; }
+  .shot .noimg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+  .info { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .info .h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .info .id { font-size: 24px; line-height: 1; }
+  .info .meta { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .why { font-size: 13px; color: var(--ink2); } .why b { color: var(--vc); margin-right: 6px; }
+  .why .tmp { color: var(--faint); }
+  .desc { margin: 0; font-size: 15px; line-height: 22px; }
+  .pending { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+  .shimmer { height: 10px; border-radius: 4px; background: linear-gradient(90deg, #EEE 0%, #E2E2E0 50%, #EEE 100%); background-size: 200% 100%; animation: sh 1.6s linear infinite; }
+  @keyframes sh { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .metrics div { display: flex; flex-direction: column; padding: 0 16px; border-left: 1px solid var(--line); }
+  .metrics div:first-child { padding-left: 0; border-left: 0; }
+  .metrics span { font-size: 12px; color: var(--muted); }
+  .metrics b { font-size: 28px; line-height: 34px; } .metrics b small { font-size: 13px; color: var(--muted); margin-left: 2px; }
+  .lurow { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink2); }
+  .stack { flex: 1; display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--soft); }
 
-  @media (max-width: 900px) {
-    main { flex-direction: column; }
-    .mapwrap { flex: none; height: 440px; }
-    aside { width: 100%; border-left: 0; border-top: 1px solid var(--line); }
-    .layers { width: 180px; }
+  @media (max-width: 1000px) {
+    body { display: flex; flex-direction: column; height: auto; padding: 16px; gap: 16px; }
+    .tl { max-height: 420px; }
+    .mapcard { flex: none; overflow: visible; background: none; border-radius: 0; }
+    #map { position: relative; height: 440px; border-radius: 24px; overflow: hidden; }
+    .sheet { position: static; margin-top: 12px; grid-template-columns: 1fr; padding: 16px; }
+    .info .meta { margin-left: 0; width: 100%; }
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+    .metrics div:nth-child(3) { padding-left: 0; border-left: 0; }
+    .chipsbar { left: 12px; top: 12px; max-width: calc(100% - 150px); } .seg { right: 12px; top: 12px; }
+    .leaflet-control-zoom { margin: 64px 12px 0 0 !important; }
     .legend { display: none; }
-    .right { margin-left: 0; }
   }
 </style>
 </head>
 <body>
-<header>
+<section class="left" aria-label="요약과 타임라인">
   <div class="brand">
-    <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#1B222B" stroke="#33404F"/><path d="M6 16c3-5 7-7.5 10-7.5S23 11 26 16c-3 5-7 7.5-10 7.5S9 21 6 16Z" fill="none" stroke="#5BC0EB" stroke-width="1.8"/><circle cx="16" cy="16" r="3.4" fill="#FF6A4D"/></svg>
-    <div><strong>엣지아이 관제</strong><small>모래고개입구 · 강원 강릉시 구정면</small></div>
+    <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="9" fill="#0A0A0A"/><path d="M6 15c2.8-4.6 6-6.5 9-6.5s6.2 1.9 9 6.5c-2.8 4.6-6 6.5-9 6.5S8.8 19.6 6 15z" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="15" cy="15" r="2.8" fill="#E10600"/></svg>
+    <strong>엣지아이 관제</strong>
+    <span class="live" id="live"><i></i><span id="liveText">연결 중…</span></span>
   </div>
-  <div class="kpis" id="kpis"></div>
-  <div class="right">
-    <div class="perf" id="perf"></div>
-    <label class="check"><input type="checkbox" id="follow" checked> 새 알람 따라가기</label>
-    <span class="live" id="live"><span class="dot"></span><span id="liveText">연결 중…</span></span>
+  <div class="where" id="where">&nbsp;</div>
+  <div class="hero" id="hero"></div>
+  <div class="stats" id="stats" role="group" aria-label="판정으로 거르기"></div>
+  <div class="tlhead">타임라인<span id="tlnote">최신 순</span></div>
+  <div class="tl" id="tl"><div class="empty">아직 알람이 없습니다.<br>파이프라인을 실행하면 여기에 뜹니다.</div></div>
+  <div class="perf" id="perf"></div>
+</section>
+
+<section class="mapcard" aria-label="알람 지도">
+  <div id="map"></div>
+  <div class="ui chipsbar">
+    <button type="button" class="tog" id="luToggle" aria-pressed="true">용도지역</button>
+    <button type="button" class="tog" id="droneToggle" aria-pressed="true">드론 시선</button>
+    <button type="button" class="tog" id="reportToggle" aria-pressed="true" hidden>신고 지점</button>
+    <button type="button" class="tog" id="follow" aria-pressed="true">새 알람 따라가기</button>
   </div>
-</header>
-<main>
-  <section class="mapwrap" aria-label="알람 지도">
-    <div id="map"></div>
-    <div class="float layers">
-      <span class="label">배경 지도</span>
-      <div class="seg" id="baseSeg">
-        <button type="button" data-base="sat" aria-pressed="false">위성</button>
-        <button type="button" data-base="map" aria-pressed="true">일반</button>
-      </div>
-      <label class="check"><input type="checkbox" id="luToggle" checked> 용도지역</label>
-      <label class="check"><input type="checkbox" id="droneToggle" checked> 드론 위치와 시선</label>
-    </div>
-    <div class="float legend" aria-label="범례">
-      <div><span class="label">위치 판정 · 원 = 오차 반경</span>
-        <div class="row">
-          <span><span class="ring" style="border-color:#FF6A4D;background:rgba(255,106,77,.2)"></span>확정</span>
-          <span><span class="ring" style="border-color:#F2B33D;border-style:dashed;background:rgba(242,179,61,.2)"></span>모호</span>
-          <span><span class="ring" style="border-color:#8C97A6;border-style:dotted"></span>미확정</span>
-        </div></div>
-      <div><span class="label">용도지역</span>
-        <div class="row">
-          <span><span class="sw" style="background:#3F8A62"></span>녹지</span>
-          <span><span class="sw" style="background:#93A34A"></span>농림</span>
-          <span><span class="sw" style="background:#A6924A"></span>관리</span>
-          <span><span class="sw" style="background:#C07B3E"></span>주거</span>
-          <span><span class="sw" style="background:#C2545B"></span>상업</span>
-        </div></div>
-    </div>
-  </section>
-  <aside aria-label="알람 목록">
-    <div class="ahead">
-      <div><h2>알람</h2><small>최신 순 · 1초마다 갱신</small></div>
-      <div class="filters" id="filters" role="group" aria-label="판정으로 거르기"></div>
-    </div>
-    <div id="list"><div class="empty">아직 알람이 없습니다.<br>파이프라인을 실행하면 여기에 뜹니다.</div></div>
-  </aside>
-</main>
+  <div class="ui legend" aria-label="용도지역 범례">
+    <span><i style="background:#3E8E5E"></i>녹지</span><span><i style="background:#8FA43A"></i>농림</span>
+    <span><i style="background:#B08A3E"></i>관리</span><span><i style="background:#D9823B"></i>주거</span><span><i style="background:#C8555A"></i>상업</span>
+  </div>
+  <div class="ui seg" id="baseSeg" role="group" aria-label="배경 지도">
+    <button type="button" data-base="map" aria-pressed="true">일반</button>
+    <button type="button" data-base="sat" aria-pressed="false">위성</button>
+  </div>
+  <article class="ui sheet" id="sheet" hidden aria-live="polite"></article>
+</section>
+
 <script src="/vendor/leaflet/leaflet.js"></script>
 <script>
-const COLOR = { "확정": "#FF6A4D", "모호": "#F2B33D", "미확정": "#8C97A6" };
+const COLOR = { "확정": "#E10600", "모호": "#E59A00", "미확정": "#8A8A87" };
 const DASH = { "확정": null, "모호": "6 4", "미확정": "2 4" };
-const ACCENT = "#5BC0EB";
 const VERDICTS = ["확정", "모호", "미확정"];
 
 function luColor(name) {
   name = name || "";
-  if (name.includes("주거")) return "#C07B3E";
-  if (name.includes("상업")) return "#C2545B";
+  if (name.includes("주거")) return "#D9823B";
+  if (name.includes("상업")) return "#C8555A";
   if (name.includes("공업")) return "#8E6FC9";
-  if (name.includes("보전녹지") || name.includes("자연환경") || name.includes("보전산지")) return "#2F7350";
-  if (name.includes("녹지") || name.includes("산림")) return "#3F8A62";
-  if (name.includes("농림")) return "#93A34A";
-  if (name.includes("관리")) return "#A6924A";
-  return "#56667A";
+  if (name.includes("녹지") || name.includes("산림") || name.includes("자연환경") || name.includes("보전")) return "#3E8E5E";
+  if (name.includes("농림")) return "#8FA43A";
+  if (name.includes("관리")) return "#B08A3E";
+  return "#7A8594";
 }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const sec = v => v == null ? "–" : (v / 1000).toFixed(v < 10000 ? 1 : 0) + "초";
-const hms = t => { try { return new Date(t).toLocaleTimeString("ko-KR", { hour12: false }); } catch { return ""; } };
+const secN = v => v == null ? null : (v / 1000).toFixed(v < 10000 ? 1 : 0);
+const sec = v => v == null ? "–" : v < 1000 ? Math.round(v) + "ms" : secN(v) + "초";
+const hms = t => { const d = new Date(t); return isNaN(d) ? "" : [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, "0")).join(":"); };
 const median = xs => { xs = xs.filter(x => x != null).sort((a, b) => a - b); return xs.length ? xs[Math.floor(xs.length / 2)] : null; };
+const shortLU = n => { n = String(n || ""); return (n.length > 4 ? n.replace(/지역$/, "") : n) || "용도 미상"; };
 
-const map = L.map("map", { zoomControl: false, attributionControl: true });
-L.control.zoom({ position: "topleft" }).addTo(map);
+/* ---- 영상 검증: VLM이 연기를 봤는가 (observed.smoke_present) ---- */
+function vlmOf(a) {
+  if (!a.description) return "wait";
+  if (!a.observed) return null;
+  return a.observed.smoke_present === false ? "fail" : "pass";
+}
+/* ---- 위험도: 임시 규칙 ----
+   알람 JSON에 risk 칸(예: {level, reason})이 생기면 그 값을 그대로 쓴다.
+   없으면 아래 임시 규칙. 팀 규칙이 정해지면 이 함수만 바꾸면 된다. */
+const FORESTY = n => /녹지|농림|산림|보전|자연/.test(n || "");
+function riskOf(a) {
+  if (a.risk && a.risk.level) return { level: a.risk.level, reason: a.risk.reason || "", tmp: false };
+  const ev = a.evidence || {}, top = (a.land_use || [])[0] || {}, ob = a.observed || {};
+  const b = ev.buildings_in_radius, slope = ev.terrain_slope_deg;
+  const forest = FORESTY(top.name) || ob.terrain === "산림";
+  if (vlmOf(a) === "fail") return { level: "확인 필요", reason: "위치는 계산됐지만 영상에서 연기가 보이지 않음", tmp: true };
+  if (a.location_verdict === "미확정") return { level: "확인 필요", reason: "오차가 커서 지도로 위치를 단정할 수 없음", tmp: true };
+  if (b > 0) return { level: "높음", reason: `반경 안 건물 ${b}개 · 시설 피해 우려`, tmp: true };
+  if (forest && slope >= 15) return { level: "높음", reason: `${top.name || "산림"} · 경사 ${slope}°로 번지기 쉬움`, tmp: true };
+  if (forest) return { level: "보통", reason: `${top.name || "산림"} · 산림 인접 · 반경 안 건물 없음`, tmp: true };
+  return { level: "보통", reason: `${top.name || "용도 미상"} · 반경 안 건물 없음`, tmp: true };
+}
+const RISK_DOTS = { "높음": [COLOR["확정"], COLOR["확정"], COLOR["확정"]], "보통": ["#E59A00", "#E59A00", "#D3D3D0"], "확인 필요": ["#B5B5B2", "#D3D3D0", "#D3D3D0"] };
+function riskChip(r) {
+  return `<span class="chip risk ${r.level === "확인 필요" ? "확인" : ""}"><em>${RISK_DOTS[r.level].map(c => `<i style="background:${c}"></i>`).join("")}</em>${r.level === "확인 필요" ? "확인 필요" : "위험 " + r.level}</span>`;
+}
+const ICON = {
+  pass: `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="#0E9F4A"/><path d="M3.3 6.2l1.8 1.8 3.6-3.8" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  fail: `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="#E59A00"/><rect x="5.3" y="2.6" width="1.4" height="4.4" rx=".7" fill="#fff"/><circle cx="6" cy="8.7" r=".8" fill="#fff"/></svg>`,
+  wait: `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="#9A9A9A" stroke-width="1.2" stroke-dasharray="2 1.6"/></svg>`
+};
+function vlmChip(a) {
+  const v = vlmOf(a); if (!v) return "";
+  const t = { pass: "영상 검증 통과", fail: "헛탐지 의심", wait: "검증 중" }[v];
+  return `<span class="chip vlm ${v === "wait" ? "wait" : ""}">${ICON[v]}${t}</span>`;
+}
+const vchip = v => `<span class="vchip" style="--vc:${COLOR[v] || COLOR["미확정"]}">${esc(v)}</span>`;
+
+/* ---------- 지도 ---------- */
+const map = L.map("map", { zoomControl: false, attributionControl: false });
+L.control.zoom({ position: "topright" }).addTo(map);
 L.control.scale({ imperial: false, position: "bottomright" }).addTo(map);
+L.control.attribution({ position: "bottomright", prefix: "Leaflet" }).addTo(map);
 
-const state = { alerts: [], extra: {}, selected: null, filter: "전체", known: new Set(), first: true, sig: "" };
-const layers = {};                 // alert_id → { circle, center, drone, line, json }
+const state = { alerts: [], extra: {}, selected: null, filter: "전체", known: new Set(), first: true, sig: "",
+                hist: {}, last: {}, report: null };
+const reportLayer = L.layerGroup();
+function distM(a, b) {        // 두 점 사이 거리(m), 하버사인
+  const R = 6371008.8, r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLon = (b[1] - a[1]) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+/* ---- 알람 갱신: 같은 alert_id 의 판정, 반경, 위치가 바뀐 기록 ----
+   서버가 alerts.jsonl 로 만든 기록이 있으면 그것을 쓰고, 없으면(replay_alerts.py, live_estimate.py)
+   화면이 열려 있는 동안 1초마다 본 변화를 쌓는다. 설명이 붙는 것은 갱신으로 치지 않는다. */
+const stateOf = a => ({ verdict: a.location_verdict, radius: a.position.error_radius_m,
+                        lat: +a.position.lat.toFixed(6), lon: +a.position.lon.toFixed(6), time: a.time });
+const sameState = (x, y) => x && y && x.verdict === y.verdict && x.radius === y.radius && x.lat === y.lat && x.lon === y.lon;
+function mergeHistory(alerts, server) {
+  const updated = new Set();
+  for (const a of alerts) {
+    const id = a.alert_id, now = stateOf(a);
+    let h = server && server[id] && server[id].length ? server[id].slice() : (state.hist[id] || []);
+    if (!h.length || !sameState(h[h.length - 1], now)) h = h.concat([now]);
+    if (state.last[id] && !sameState(state.last[id], now)) updated.add(id);
+    state.hist[id] = h; state.last[id] = now;
+  }
+  return updated;
+}
+const layers = {};
 const droneLayer = L.layerGroup().addTo(map);
 let luLayer = null, bases = {}, baseNow = null;
+const sheetEl = document.getElementById("sheet");
+
+function sheetPad() { return sheetEl.hidden || getComputedStyle(sheetEl).position !== "absolute" ? 40 : sheetEl.offsetHeight + 44; }
+function placeBottomControls() {
+  const over = getComputedStyle(sheetEl).position === "absolute";
+  document.querySelectorAll(".leaflet-bottom").forEach(el => el.style.bottom = (sheetEl.hidden || !over ? 0 : sheetEl.offsetHeight + 24) + "px");
+}
+new ResizeObserver(placeBottomControls).observe(sheetEl);
+function focusOn(pts, maxZoom) {
+  map.flyToBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 120], paddingBottomRight: [80, sheetPad()], maxZoom, duration: .6 });
+}
 
 function setBase(kind) {
   if (!bases[kind]) return;
   if (baseNow) map.removeLayer(bases[baseNow]);
-  bases[kind].addTo(map); bases[kind].bringToBack();
-  baseNow = kind;
-  document.getElementById("map").classList.toggle("dark-tiles", kind === "map");
+  bases[kind].addTo(map); bases[kind].bringToBack(); baseNow = kind;
+  document.getElementById("map").classList.toggle("tint", kind === "map");
   document.querySelectorAll("#baseSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.base === kind)));
 }
+function toggle(btn, on) { btn.setAttribute("aria-pressed", String(on)); }
 
 async function init() {
   const cfg = await (await fetch("/api/config")).json();
   map.setView(cfg.center, 15);
+  if (cfg.site_name) { document.getElementById("where").textContent = cfg.site_name; document.title = `엣지아이 관제 · ${cfg.site_name}`; }
   bases.map = cfg.vworld_key
     ? L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${cfg.vworld_key}/Base/{z}/{y}/{x}.png`, { maxZoom: 19, attribution: "© V-World" })
     : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" });
@@ -243,137 +334,152 @@ async function init() {
   const satBtn = document.querySelector('#baseSeg [data-base="sat"]');
   if (!bases.sat) { satBtn.disabled = true; satBtn.title = "VWORLD_KEY 환경변수를 넣으면 쓸 수 있습니다"; }
   document.querySelectorAll("#baseSeg button").forEach(b => b.addEventListener("click", () => setBase(b.dataset.base)));
-  setBase(bases.sat ? "sat" : "map");
+  setBase("map");
 
+  if (cfg.report) {
+    state.report = cfg.report;
+    const rp = [cfg.report.lat, cfg.report.lon];
+    L.circle(rp, { radius: cfg.report.radius_m, color: "#0A0A0A", weight: 1.5, dashArray: "2 6", opacity: .6, fill: false, interactive: false }).addTo(reportLayer);
+    L.marker(rp, { keyboard: false, zIndexOffset: 500, icon: L.divIcon({ className: "", iconSize: [64, 40], iconAnchor: [32, 37],
+      html: `<div class="report-pin"><b>신고 지점</b><i></i><em></em></div>` }) })
+      .bindTooltip(`신고 지점 · 수색 반경 ${cfg.report.radius_m}m`, { className: "lu", direction: "top", offset: [0, -34] }).addTo(reportLayer);
+    reportLayer.addTo(map);
+    if (!state.alerts.length) map.setView(rp, 15);
+    const rBtn = document.getElementById("reportToggle"); rBtn.hidden = false;
+    rBtn.addEventListener("click", () => { const on = rBtn.getAttribute("aria-pressed") !== "true"; toggle(rBtn, on); on ? reportLayer.addTo(map) : map.removeLayer(reportLayer); });
+  }
+  const luBtn = document.getElementById("luToggle");
   if (cfg.has_landuse) {
     const gj = await (await fetch("/api/landuse")).json();
     luLayer = L.geoJSON(gj, {
-      style: f => ({ color: luColor(f.properties.name), weight: 1, opacity: .7, fillColor: luColor(f.properties.name), fillOpacity: .3 }),
-      onEachFeature: (f, l) => l.bindTooltip(f.properties.name || "", { className: "lu" })
+      style: f => ({ color: luColor(f.properties.name), weight: 1, opacity: .9, fillColor: luColor(f.properties.name), fillOpacity: .22 }),
+      onEachFeature: (f, l) => l.bindTooltip(f.properties.name || "", { className: "lu", sticky: true })
     }).addTo(map);
     luLayer.bringToBack();
-  } else {
-    document.getElementById("luToggle").closest("label").style.display = "none";
-  }
-  document.getElementById("luToggle").addEventListener("change", e => {
-    if (!luLayer) return;
-    e.target.checked ? luLayer.addTo(map) : map.removeLayer(luLayer);
-    if (e.target.checked) luLayer.bringToBack();
+  } else { luBtn.style.display = "none"; document.querySelector(".legend").style.display = "none"; }
+  luBtn.addEventListener("click", () => {
+    if (!luLayer) return; const on = luBtn.getAttribute("aria-pressed") !== "true"; toggle(luBtn, on);
+    if (on) { luLayer.addTo(map); luLayer.bringToBack(); } else map.removeLayer(luLayer);
   });
-  document.getElementById("droneToggle").addEventListener("change", e => {
-    e.target.checked ? droneLayer.addTo(map) : map.removeLayer(droneLayer);
-  });
+  const drBtn = document.getElementById("droneToggle");
+  drBtn.addEventListener("click", () => { const on = drBtn.getAttribute("aria-pressed") !== "true"; toggle(drBtn, on); on ? droneLayer.addTo(map) : map.removeLayer(droneLayer); });
+  const fBtn = document.getElementById("follow");
+  fBtn.addEventListener("click", () => toggle(fBtn, fBtn.getAttribute("aria-pressed") !== "true"));
   poll();
   setInterval(poll, 1000);
 }
+const following = () => document.getElementById("follow").getAttribute("aria-pressed") === "true";
 
 function droneIcon(heading) {
   return L.divIcon({ className: "", iconSize: [26, 26], iconAnchor: [13, 13],
-    html: `<svg width="26" height="26" viewBox="-13 -13 26 26" aria-hidden="true"><circle r="12" fill="#0E1217" stroke="${ACCENT}" stroke-width="2"/>
-           <path d="M0 -7 L5 6 L0 3 L-5 6Z" fill="${ACCENT}" transform="rotate(${heading ?? 0})"/></svg>` });
+    html: `<svg width="26" height="26" viewBox="-13 -13 26 26" aria-hidden="true"><circle r="11.5" fill="#fff" stroke="#0A0A0A" stroke-width="2"/>
+           <path d="M0 -6.5 L4.6 5.5 L0 2.8 L-4.6 5.5Z" fill="#0A0A0A" transform="rotate(${heading ?? 0})"/></svg>` });
 }
 
 function drawAlert(a, ex) {
   const key = a.alert_id, sel = state.selected === key;
   const visible = state.filter === "전체" || state.filter === a.location_verdict;
-  const json = JSON.stringify([a.position, a.location_verdict, ex && ex.drone, sel, visible]);
+  const hist = state.hist[key] || [];
+  const json = JSON.stringify([a.position, a.location_verdict, ex && ex.drone, sel, visible, sel ? hist.length : 0]);
   if (layers[key] && layers[key].json === json) return;
   removeAlert(key);
   if (!visible) { layers[key] = { json }; return; }
-  const c = COLOR[a.location_verdict] || COLOR["미확정"];
-  const p = [a.position.lat, a.position.lon];
-  const L_ = { json };
-  L_.circle = L.circle(p, { radius: a.position.error_radius_m, color: c, weight: sel ? 2.5 : 1.8,
-    dashArray: DASH[a.location_verdict], fillColor: c, fillOpacity: sel ? .24 : .15 }).addTo(map);
-  if (sel) L_.halo = L.circleMarker(p, { radius: 22, color: ACCENT, weight: 1, opacity: .6, fill: false, interactive: false }).addTo(map);
-  L_.center = L.circleMarker(p, { radius: sel ? 7 : 5, color: sel ? "#fff" : "#0E1217", weight: sel ? 2.5 : 2, fillColor: c, fillOpacity: 1 })
-    .addTo(map).on("click", () => select(key, true));
+  const c = COLOR[a.location_verdict] || COLOR["미확정"], p = [a.position.lat, a.position.lon], L_ = { json };
+  L_.circle = L.circle(p, { radius: a.position.error_radius_m, color: c, weight: sel ? 2.5 : 2, dashArray: DASH[a.location_verdict],
+    fillColor: c, fillOpacity: sel ? .22 : .14 }).addTo(map);
+  if (sel) L_.halo = L.circleMarker(p, { radius: 22, color: c, weight: 1.2, opacity: .45, fill: false, interactive: false }).addTo(map);
+  if (sel && hist.length > 1) {          // 갱신 전 위치들을 옅은 점과 선으로 잇는다
+    const pts = hist.map(h => [h.lat, h.lon]);
+    L_.trail = L.layerGroup([L.polyline(pts, { color: "#0A0A0A", weight: 1.5, opacity: .35, dashArray: "1 5", interactive: false }),
+      ...hist.slice(0, -1).map(h => L.circleMarker([h.lat, h.lon], { radius: 3.5, color: "#fff", weight: 1.5,
+        fillColor: COLOR[h.verdict] || COLOR["미확정"], fillOpacity: .55, interactive: false }))]).addTo(map);
+  }
+  L_.center = L.circleMarker(p, { radius: sel ? 6.5 : 5, color: "#fff", weight: 2, fillColor: c, fillOpacity: 1 }).addTo(map).on("click", () => select(key, true));
   const top = (a.land_use || [])[0];
   L_.center.bindTooltip(`${esc(key)} · ${esc(a.location_verdict)}<small>${top ? esc(top.name) + " · " : ""}반경 ${a.position.error_radius_m}m</small>`,
-    { className: "callout", direction: "top", offset: [0, -10], permanent: sel });
+    { className: "callout", direction: "top", offset: [0, -10] });
   if (ex && ex.drone) {
     const d = [ex.drone.lat, ex.drone.lon];
-    L_.line = L.polyline([d, p], { color: ACCENT, weight: sel ? 2 : 1.5, dashArray: "5 5", opacity: sel ? .95 : .55, interactive: false }).addTo(droneLayer);
+    L_.line = L.polyline([d, p], { color: "#0A0A0A", weight: sel ? 2 : 1.5, dashArray: "5 5", opacity: sel ? .8 : .45, interactive: false }).addTo(droneLayer);
     L_.drone = L.marker(d, { icon: droneIcon(ex.drone.heading), keyboard: false }).bindTooltip("드론 위치", { className: "lu" }).addTo(droneLayer);
   }
   layers[key] = L_;
 }
 function removeAlert(key) {
   const l = layers[key]; if (!l) return;
-  ["circle", "halo", "center"].forEach(k => l[k] && map.removeLayer(l[k]));
+  ["circle", "halo", "center", "trail"].forEach(k => l[k] && map.removeLayer(l[k]));
   ["line", "drone"].forEach(k => l[k] && droneLayer.removeLayer(l[k]));
   delete layers[key];
 }
 
-function landStack(lu) {
-  if (!lu || !lu.length) return "";
-  const parts = lu.slice(0, 4);
-  return `<div><div class="stack">${parts.map(u => `<span style="width:${(u.ratio * 100).toFixed(1)}%;background:${luColor(u.name)}"></span>`).join("")}</div>
-    <div class="lu-row">${parts.slice(0, 3).map(u => `<span><i style="background:${luColor(u.name)}"></i>${esc(u.name)} <b class="num">${(u.ratio * 100).toFixed(0)}%</b></span>`).join("")}</div></div>`;
-}
-
-function descBlock(a) {
-  if (a.description) return `<p class="desc">${esc(a.description)}</p>`;
-  const waited = Math.max(0, (Date.now() - new Date(a.time).getTime()) / 1000);
-  return `<div class="pending"><div class="msg"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="28 12"/></svg>
-    설명 생성 중 · <span class="num">${waited.toFixed(0)}초</span> 경과</div><span class="shimmer"></span><span class="shimmer" style="width:72%"></span></div>`;
-}
-
-function warnBlock(a) {
-  if (!(a.observed && a.observed.smoke_present === false)) return "";
-  return `<div class="warn"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 L15 14 H1 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.5v3.5M8 12v.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    VLM이 연기를 보지 못함 · 헛탐지 가능성</div>`;
-}
-
-function card(a, ex, open, fresh) {
-  const v = a.location_verdict, lat = a.latency_ms || {}, ev = a.evidence || {}, lu = a.land_use || [];
-  const head = `<div class="top"><span class="id num">${esc(a.alert_id)}</span><span class="pill ${v}">${esc(v)}</span>
-    <span class="t num">${hms(a.time)}</span></div>`;
-  if (!open) {
-    const top = lu[0];
-    return `<button type="button" class="card ${fresh ? "fresh" : ""}" data-id="${esc(a.alert_id)}" aria-label="${esc(a.alert_id)} ${esc(v)} 알람 열기">
-      ${head}${warnBlock(a)}${descBlock(a)}
-      <div class="chips">${top ? `<span>${esc(top.name)} <b class="num">${(top.ratio * 100).toFixed(0)}%</b></span>` : ""}
-        <span>반경 <b class="num">${a.position.error_radius_m}m</b></span>
-        ${a.description ? `<span>설명까지 <b class="num">${sec(lat.alert_to_description)}</b></span>` : `<span>알람까지 <b class="num">${sec(lat.detect_to_alert)}</b></span>`}</div>
-    </button>`;
+/* ---------- 왼쪽 ---------- */
+function summary(a) {
+  if (!a.description) {
+    const waited = Math.max(0, (Date.now() - new Date(a.time).getTime()) / 1000);
+    return `설명 생성 중 · ${waited.toFixed(0)}초 경과`;
   }
-  let shot = "";
-  if (ex && ex.image) {
-    const b = ex.box, d = ex.drone;
-    shot = `<div class="shot" style="aspect-ratio:${b ? b.aspect.toFixed(3) : "4 / 3"}">
-      <img src="${ex.image}" alt="${esc(a.detection_id)} 탐지 프레임" loading="lazy">
-      ${b ? `<span class="box" style="left:${b.left * 100}%;top:${b.top * 100}%;width:${b.width * 100}%;height:${b.height * 100}%"></span>
-             <span class="score num" style="left:${b.left * 100}%;top:${b.top * 100}%">연기 ${b.score}</span>` : ""}
-      ${d && d.alt != null ? `<span class="cap">드론 고도 ${d.alt}m${d.heading != null ? ` · 기수 ${d.heading}°` : ""}</span>` : ""}
-    </div>`;
-  }
+  const top = (a.land_use || [])[0], ob = a.observed || {};
+  const smoke = ob.smoke_present === false ? "연기 안 보임" : (ob.smoke_color ? ob.smoke_color + " 연기" : "연기");
+  return `${esc(shortLU(top && top.name))} · ${esc(smoke)} · 반경 ${a.position.error_radius_m}m`;
+}
+function updBadge(id) { const n = (state.hist[id] || []).length - 1; return n > 0 ? `<span class="upd" title="같은 알람이 ${n}번 갱신됨">갱신 ${n}</span>` : ""; }
+function histRow(id) {
+  const h = state.hist[id] || []; if (h.length < 2) return "";
+  const show = h.slice(-4), cut = h.length - show.length;
+  return `<div class="hist">갱신 ${h.length - 1}회${cut ? ` · 앞 ${cut}개 생략` : ""}
+    ${show.map((x, i) => `${i ? '<span class="ar">→</span>' : ""}<span class="st ${i === show.length - 1 ? "now" : ""}" style="--vc:${COLOR[x.verdict] || COLOR["미확정"]}"><i></i>${esc(x.verdict)} <span class="num">${x.radius}m</span></span>`).join("")}
+    <span>· 마지막 ${hms(h[h.length - 1].time)}</span></div>`;
+}
+function item(a, fresh) {
+  const sel = a.alert_id === state.selected, c = COLOR[a.location_verdict] || COLOR["미확정"];
+  return `<button type="button" class="item ${sel ? "sel" : ""} ${fresh ? "fresh" : ""}" style="--vc:${c}" data-id="${esc(a.alert_id)}" aria-current="${sel}">
+    <span class="t num">${hms(a.time)}</span><span class="rail"></span>
+    <span class="c"><span class="h"><span class="id num">${esc(a.alert_id)}</span>${vchip(a.location_verdict)}${updBadge(a.alert_id)}</span>
+      <span class="s">${summary(a)}</span>
+      <span class="row">${riskChip(riskOf(a))}${vlmChip(a)}</span></span>
+  </button>`;
+}
+
+/* ---------- 시트 ---------- */
+function sheet(a, ex) {
+  if (!a) { sheetEl.hidden = true; sheetEl.innerHTML = ""; placeBottomControls(); return; }
+  const v = a.location_verdict, lat = a.latency_ms || {}, ev = a.evidence || {}, lu = a.land_use || [], r = riskOf(a), vlm = vlmOf(a);
+  const d = ex && ex.drone, b = ex && ex.box;
+  const rd = state.report ? Math.round(distM([state.report.lat, state.report.lon], [a.position.lat, a.position.lon])) : null;
+  const meta = [hms(a.time), d && d.alt != null ? `드론 ${d.alt}m` : "", d && d.heading != null ? `기수 ${d.heading}°` : "",
+                rd != null ? `신고 지점에서 ${rd}m` : ""].filter(Boolean).join(" · ");
+  const shot = ex && ex.image
+    ? `<div class="shot ${vlm === "fail" ? "dim" : ""}" ${b ? `style="aspect-ratio:${b.aspect.toFixed(3)}"` : ""}><img src="${ex.image}" alt="${esc(a.detection_id)} 탐지 프레임">
+        ${b ? `<span class="box" style="left:${b.left * 100}%;top:${b.top * 100}%;width:${b.width * 100}%;height:${b.height * 100}%"></span>
+               <span class="score num" style="${b.left > .7 ? `right:${(1 - b.left - b.width) * 100}%` : `left:${b.left * 100}%`};top:${b.top * 100}%">연기 ${(+b.score).toFixed(2)}</span>` : ""}</div>`
+    : `<div class="shot"><span class="noimg">사진 없음</span></div>`;
+  const body = a.description ? `<p class="desc">${esc(a.description)}</p>`
+    : `<div class="pending"><span>설명 생성 중 · <span class="num">${Math.max(0, (Date.now() - new Date(a.time).getTime()) / 1000).toFixed(0)}초</span> 경과</span><span class="shimmer"></span><span class="shimmer" style="width:70%"></span></div>`;
+  const m = (label, val, unit) => `<div><span>${label}</span><b class="num">${val ?? "–"}${val != null && unit ? `<small>${unit}</small>` : ""}</b></div>`;
   const rule = a.verdict_rule || {};
-  return `<article class="card open ${fresh ? "fresh" : ""}" data-id="${esc(a.alert_id)}" aria-current="true">
-    ${head}${shot}${warnBlock(a)}${descBlock(a)}
-    <div class="metrics">
-      <div><span>오차 반경</span><b class="num">${a.position.error_radius_m}m</b></div>
-      <div><span>반경 안 건물</span><b class="num">${ev.buildings_in_radius ?? "–"}</b></div>
-      <div><span>주변 경사</span><b class="num">${ev.terrain_slope_deg != null ? ev.terrain_slope_deg + "°" : "–"}</b></div>
-      <div><span>1순위 비율</span><b class="num">${lu[0] ? (lu[0].ratio * 100).toFixed(0) + "%" : "–"}</b></div>
-    </div>
-    ${landStack(lu)}
-    ${rule.rule ? `<div style="font-size:12px;color:var(--muted)">판정 기준 ${esc(rule.rule)} ${rule.threshold} 이상 · 조회 지점 ${rule.samples}곳</div>` : ""}
-    <div class="flow">
-      <span><span class="dot" style="background:#C9D2DC;width:6px;height:6px"></span>탐지 <b class="num">${sec(lat.detect)}</b></span><hr>
-      <span><span class="dot" style="background:${COLOR[v]};width:6px;height:6px"></span>알람 <b class="num">${sec(lat.detect_to_alert)}</b></span><hr style="flex:2">
-      <span><span class="dot" style="background:${ACCENT};width:6px;height:6px"></span>설명 <b class="num">${a.description ? "+" + sec(lat.alert_to_description) : "대기"}</b></span>
-    </div>
-  </article>`;
+  const luTxt = lu[0] ? `${esc(lu[0].name)} ${(lu[0].ratio * 100).toFixed(0)}%` : "용도 정보 없음";
+  sheetEl.hidden = false;
+  sheetEl.style.setProperty("--vc", r.level === "확인 필요" ? "#8A8A87" : COLOR["확정"]);
+  sheetEl.innerHTML = `${shot}
+    <div class="info">
+      <div class="h"><span class="id num">${esc(a.alert_id)}</span>${vchip(v)}${riskChip(r)}${vlmChip(a)}<span class="meta">${meta}</span></div>
+      ${histRow(a.alert_id)}
+      <div class="why"><b>근거</b>${esc(r.reason)}${r.tmp ? ` <span class="tmp">(임시 규칙)</span>` : ""}</div>
+      ${body}
+      <div class="metrics">${m("오차 반경", a.position.error_radius_m, "m")}${m("반경 안 건물", ev.buildings_in_radius, "개")}
+        ${m("주변 경사", ev.terrain_slope_deg, "°")}${m(a.description ? "설명까지" : "알람까지", secN(a.description ? lat.alert_to_description : lat.detect_to_alert), "초")}</div>
+      <div class="lurow"><div class="stack">${lu.slice(0, 4).map(u => `<span style="width:${(u.ratio * 100).toFixed(1)}%;background:${luColor(u.name)}"></span>`).join("")}</div>
+        <span>${luTxt}${rule.rule ? ` · 기준 ${rule.threshold} 이상` : ""}</span></div>
+    </div>`;
+  placeBottomControls();
 }
 
 function select(id, fly) {
-  state.selected = id;
-  state.sig = "";
+  state.selected = id; state.sig = "";
   const a = state.alerts.find(x => x.alert_id === id);
-  if (a && fly) map.flyTo([a.position.lat, a.position.lon], Math.max(map.getZoom(), 17), { duration: .6 });
   render();
-  const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+  if (a && fly) focusOn([[a.position.lat, a.position.lon]], Math.max(map.getZoom(), 17));
+  const el = document.querySelector(`.item[data-id="${CSS.escape(id)}"]`);
   if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
@@ -381,37 +487,44 @@ function render(freshIds = new Set()) {
   const { alerts, extra } = state;
   const cnt = { "확정": 0, "모호": 0, "미확정": 0 };
   alerts.forEach(a => cnt[a.location_verdict] = (cnt[a.location_verdict] || 0) + 1);
-  const pending = alerts.filter(a => !a.description).length;
+  const vs = alerts.map(vlmOf), pass = vs.filter(x => x === "pass").length, fail = vs.filter(x => x === "fail").length, wait = vs.filter(x => x === "wait").length;
 
-  document.getElementById("kpis").innerHTML =
-    `<div class="kpi sep"><span>알람</span><span class="v num">${alerts.length}</span></div>` +
-    VERDICTS.map((k, i) => `<div class="kpi ${i === 2 ? "sep" : ""}"><span><span class="dot" style="background:${COLOR[k]}"></span>${k}</span>
-      <span class="v num" style="color:${k === "확정" ? "var(--confirm-ink)" : k === "모호" ? "var(--ambig)" : "var(--unsure-ink)"}">${cnt[k]}</span></div>`).join("") +
-    `<div class="kpi"><span>설명 대기</span><span class="v num" style="color:var(--accent)">${pending}</span></div>`;
+  document.getElementById("hero").innerHTML = `<span class="big num">${cnt["확정"]}</span>
+    <div><b>확정 알람</b><span>영상 검증 통과 ${pass} · 헛탐지 의심 ${fail}${wait ? ` · 검증 중 ${wait}` : ""}</span></div>`;
+
+  const total = alerts.length;
+  document.getElementById("stats").innerHTML = VERDICTS.map(k => {
+    const on = total ? Math.max(cnt[k] ? 1 : 0, Math.round(cnt[k] / total * 6)) : 0;
+    return `<button type="button" class="stat" data-f="${k}" aria-pressed="${state.filter === k}" title="${k}만 보기 (한 번 더 누르면 전체)">
+      <span class="lab"><i style="background:${COLOR[k]}"></i>${k}</span><span class="n num ${cnt[k] ? "" : "zero"}">${cnt[k]}</span>
+      <span class="dots">${Array.from({ length: 6 }, (_, i) => `<i ${i < on ? `style="background:${COLOR[k]}"` : ""}></i>`).join("")}</span></button>`;
+  }).join("");
+  document.querySelectorAll(".stat").forEach(b => b.addEventListener("click", () => {
+    state.filter = state.filter === b.dataset.f ? "전체" : b.dataset.f; state.sig = ""; render();
+  }));
+  document.getElementById("tlnote").textContent = state.filter === "전체" ? "최신 순" : `${state.filter}만 · 최신 순`;
+
   const det = median(alerts.map(a => a.latency_ms && a.latency_ms.detect));
   const gq = median(alerts.map(a => a.latency_ms && a.latency_ms.geo_query));
   document.getElementById("perf").innerHTML =
-    `<span>탐지 <b class="num">${sec(det)}</b>/장</span><span>지리 조회 <b class="num">${sec(gq)}</b></span><span>VLM 대기열 <b class="num">${pending}</b></span>`;
-
-  document.getElementById("filters").innerHTML = ["전체", ...VERDICTS].map(k =>
-    `<button type="button" data-f="${k}" aria-pressed="${state.filter === k}">${k} <span class="num">${k === "전체" ? alerts.length : cnt[k]}</span></button>`).join("");
-  document.querySelectorAll("#filters button").forEach(b => b.addEventListener("click", () => { state.filter = b.dataset.f; state.sig = ""; render(); }));
+    `<div>탐지<b class="num">${sec(det)}/장</b></div><div>지리 조회<b class="num">${sec(gq)}</b></div><div>VLM 대기열<b class="num">${wait}</b></div>`;
 
   const ids = new Set(alerts.map(a => a.alert_id));
   Object.keys(layers).forEach(k => { if (!ids.has(k)) removeAlert(k); });
   alerts.forEach(a => drawAlert(a, extra[a.alert_id]));
 
-  const list = document.getElementById("list");
-  const shown = alerts.filter(a => state.filter === "전체" || a.location_verdict === state.filter)
-                      .sort((a, b) => b.alert_id.localeCompare(a.alert_id));
-  if (!alerts.length) list.innerHTML = `<div class="empty">아직 알람이 없습니다.<br>파이프라인을 실행하면 여기에 뜹니다.</div>`;
-  else if (!shown.length) list.innerHTML = `<div class="empty">${esc(state.filter)} 알람이 없습니다.</div>`;
+  const tl = document.getElementById("tl");
+  const shown = alerts.filter(a => state.filter === "전체" || a.location_verdict === state.filter).sort((a, b) => b.alert_id.localeCompare(a.alert_id));
+  if (!alerts.length) tl.innerHTML = `<div class="empty">아직 알람이 없습니다.<br>파이프라인을 실행하면 여기에 뜹니다.</div>`;
+  else if (!shown.length) tl.innerHTML = `<div class="empty">${esc(state.filter)} 알람이 없습니다.</div>`;
   else {
-    const scroll = list.scrollTop;
-    list.innerHTML = shown.map(a => card(a, extra[a.alert_id], a.alert_id === state.selected, freshIds.has(a.alert_id))).join("");
-    list.scrollTop = scroll;
-    list.querySelectorAll("button.card").forEach(c => c.addEventListener("click", () => select(c.dataset.id, true)));
+    const scroll = tl.scrollTop;
+    tl.innerHTML = shown.map(a => item(a, freshIds.has(a.alert_id))).join("");
+    tl.scrollTop = scroll;
+    tl.querySelectorAll(".item").forEach(c => c.addEventListener("click", () => select(c.dataset.id, true)));
   }
+  const selA = alerts.find(a => a.alert_id === state.selected);
+  sheet(selA && (state.filter === "전체" || selA.location_verdict === state.filter) ? selA : null, selA && extra[selA.alert_id]);
 }
 
 async function poll() {
@@ -420,26 +533,29 @@ async function poll() {
   try { st = await (await fetch("/api/alerts")).json(); }
   catch { live.classList.add("off"); txt.textContent = "서버에 연결할 수 없음"; return; }
   live.classList.remove("off");
-  txt.innerHTML = `실시간 <span class="num">${new Date().toLocaleTimeString("ko-KR", { hour12: false })}</span>`;
+  txt.innerHTML = `실시간 · <span class="num">${hms(Date.now())}</span>`;
 
   state.alerts = st.alerts; state.extra = st.extra;
+  const updated = mergeHistory(st.alerts, st.history);
   const ids = st.alerts.map(a => a.alert_id);
   const fresh = new Set(state.first ? [] : ids.filter(id => !state.known.has(id)));
+  const flash = new Set([...fresh, ...updated]);
   const newest = [...ids].sort().pop();
   if (!state.selected && newest) state.selected = newest;
-  if (fresh.size && document.getElementById("follow").checked) state.selected = [...fresh].sort().pop();
+  if (fresh.size && following()) state.selected = [...fresh].sort().pop();
 
   const sig = JSON.stringify(st) + state.selected + state.filter;
   const pending = st.alerts.some(a => !a.description);
-  if (sig !== state.sig || pending) { state.sig = sig; render(fresh); }
+  if (sig !== state.sig || pending) { state.sig = sig; render(flash); }
 
   if (state.first && st.alerts.length) {
     const pts = st.alerts.map(a => [a.position.lat, a.position.lon]);
     Object.values(st.extra).forEach(e => e.drone && pts.push([e.drone.lat, e.drone.lon]));
-    map.fitBounds(L.latLngBounds(pts).pad(.35), { maxZoom: 17 });
-  } else if (fresh.size && document.getElementById("follow").checked) {
+    if (state.report) pts.push([state.report.lat, state.report.lon]);
+    map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 120], paddingBottomRight: [80, sheetPad()], maxZoom: 17 });
+  } else if ((fresh.size || updated.has(state.selected)) && following()) {
     const a = st.alerts.find(x => x.alert_id === state.selected);
-    if (a) map.flyTo([a.position.lat, a.position.lon], Math.max(map.getZoom(), 16), { duration: .6 });
+    if (a) focusOn([[a.position.lat, a.position.lon]], Math.max(map.getZoom(), 16));
   }
   state.known = new Set(ids);
   state.first = false;

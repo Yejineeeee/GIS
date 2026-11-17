@@ -312,7 +312,7 @@ python src/pipeline/run.py --weights runs/smoke_1260_960/weights/best.pt --frame
 python tools/make_demo_video.py results/pipeline_scenario results/demo_scenario sim/frames_scenario results/demo_scenario.mp4
 ```
 
-`--sim-terrain` 은 밑동 가림 PR 에서 run.py 에 넣는다. 영상은 `tools/replay_alerts.py` 로 같은 알람이
+`--sim-terrain` 은 run.py 에 들어 있다(밑동 가림 PR). 영상은 `tools/replay_alerts.py` 로 같은 알람이
 갱신되는 것처럼 대시보드에 한 단계씩 쓰고 크롬 헤드리스로 찍어 드론 화면과 나란히 붙인다.
 
 한 번 돌린 결과(발화점 37.468027, 127.103535, 신고 지점은 그 서쪽 약 280m)
@@ -340,7 +340,7 @@ python tools/make_demo_video.py results/pipeline_scenario results/demo_scenario 
 ```
 python tools/sim_server.py sim 8800 results/live           # 세 번째 인자: 알람을 읽을 폴더 (GET /latest)
 python tools/live_estimate.py sim/frames_live results/live --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json
-python src/dashboard/server.py --out results/live --frames sim/frames_live --geo-dir data/geo_jagok --port 8820
+python src/dashboard/server.py --out results/live --frames sim/frames_live --geo-dir data/geo_jagok --port 8820 --report 37.468913 127.10057
 ```
 
 ```

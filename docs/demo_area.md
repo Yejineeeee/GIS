@@ -230,8 +230,8 @@ python tools/make_sim_buildings.py data/geo_jagok/buildings_4326.geojson sim/bui
 바꾸면서 남은 일
 
 - 3.5 판정 임계값을 자곡동 자료로 다시 계산한다
-- 대시보드 지도 가운데와 지역 이름을 자곡동으로 바꾼다
-- 파이프라인(run.py)이 DEM 대신 시뮬레이터 지형 격자를 쓸 수 있게 한다(밑동 가림 PR 에서 `--sim-terrain`)
+- ~~대시보드 지도 가운데와 지역 이름을 자곡동으로 바꾼다~~ → 기본값 자곡동, `--center`, `--site-name` (11/15)
+- ~~파이프라인(run.py)이 DEM 대신 시뮬레이터 지형 격자를 쓸 수 있게 한다~~ → `--sim-terrain` 추가 (밑동 가림 PR)
 
 시뮬레이터 쓰는 법과 신고 시나리오는 `docs/simulator.md` 의 "자곡동 V-World 3D" 에 있다.
 

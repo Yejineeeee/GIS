@@ -30,6 +30,9 @@ class Detector:
         from ultralytics import YOLO
         self.model = YOLO(weights)
         self.conf, self.imgsz = conf, imgsz
+        # 첫 추론은 모델 준비 시간(약 10초)이 붙어 탐지 시간이 튄다. 빈 사진으로 한 번 미리 돌린다
+        import numpy as np
+        self.model.predict(np.zeros((imgsz, imgsz, 3), dtype=np.uint8), conf=conf, imgsz=imgsz, verbose=False)
 
     def run(self, image_path, index, video_id="V0000"):
         """사진 한 장 → (탐지 결과 frame, truth 또는 None)."""
