@@ -130,7 +130,7 @@
   .tog[aria-pressed="true"] { background: var(--ink); color: #fff; box-shadow: none; }
   .tog[aria-pressed="true"]::before { content: "✓"; }
   .tog:focus-visible, .seg button:focus-visible { outline: 2px solid var(--confirm); outline-offset: 2px; }
-  .legend { left: 20px; bottom: 20px; display: flex; gap: 12px; padding: 6px 14px 6px 12px; border-radius: 99px; background: rgba(255,255,255,.92);
+  .legend { left: 20px; top: 68px; display: flex; gap: 12px; padding: 6px 14px 6px 12px; border-radius: 99px; background: rgba(255,255,255,.92);
             box-shadow: inset 0 0 0 1px rgba(10,10,10,.08); font-size: 12px; color: var(--ink2); flex-wrap: wrap; }
   .legend span { display: flex; align-items: center; gap: 5px; } .legend i { width: 10px; height: 10px; border-radius: 3px; }
   .seg { right: 20px; top: 20px; display: flex; gap: 2px; padding: 4px; border-radius: 99px; background: var(--card); box-shadow: var(--shadow); }
@@ -381,8 +381,6 @@ function placeBottomControls() {
   const bottom = side === "bottom" ? sheetEl.offsetHeight + 24 : 0;
   document.querySelectorAll(".leaflet-bottom").forEach(el => el.style.bottom = bottom + "px");
   document.querySelectorAll(".leaflet-right").forEach(el => el.style.right = (side === "side" ? sheetEl.offsetWidth + 24 : 0) + "px");
-  const lg = document.querySelector(".legend");
-  if (lg) lg.style.bottom = (side === "bottom" ? sheetEl.offsetHeight + 40 : 20) + "px";
 }
 window.addEventListener("resize", placeBottomControls);
 new ResizeObserver(placeBottomControls).observe(sheetEl);
