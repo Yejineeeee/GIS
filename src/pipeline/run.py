@@ -39,7 +39,8 @@
                   첫 장이 온 뒤 --idle-sec 동안 새 사진이 없거나 Ctrl+C, 또는 폴더에 STOP 파일이 생기면 끝낸다
     --geo-dir     landuse_5179.geojson, buildings_5179.geojson, *.img(DEM) 가 있는 폴더
                   (따로 줄 때는 --landuse, --buildings, --dem)
-    --vlm         none(설명 없음) / fake(고정값, 연결 확인용) / qwen(실제 모델)
+    --vlm         none(설명 없음) / fake(고정값, 연결 확인용) / qwen(실제 모델, transformers)
+                  / gguf(llama-server 에 올린 GGUF 모델, --vlm-url. 현장 기기 CPU 구성)
     --no-verify   후보 검증기를 끈다 (아래)
 
 출력 (--out, 기본 results/pipeline)
@@ -220,7 +221,8 @@ def main():
     ap.add_argument("--landuse", help="landuse_5179.geojson (기본: geo-dir 안)")
     ap.add_argument("--buildings", help="buildings_5179.geojson (기본: geo-dir 안, 없으면 건너뜀)")
     ap.add_argument("--dem", nargs="*", help="DEM IMG 파일들 (기본: geo-dir 안 *.img)")
-    ap.add_argument("--vlm", default="none", choices=["none", "fake", "qwen"])
+    ap.add_argument("--vlm", default="none", choices=["none", "fake", "qwen", "gguf"])
+    ap.add_argument("--vlm-url", default="http://127.0.0.1:8099", help="gguf 모드의 llama-server 주소")
     ap.add_argument("--vlm-crop-px", type=int, default=360,
                     help="설명에 넣는 탐지 조각의 긴 변(px). 0 이면 사진 전체 (11/19 회의, docs/inputs_cpu.md)")
     ap.add_argument("--fake-sec", type=float, default=0.0,
@@ -260,8 +262,8 @@ def main():
           f"건물 {len(geo.buildings) if buildings else '없음'}, DEM {len(dem) if dem else '없음'}")
 
     t = time.perf_counter()
-    vlm = VLM(a.vlm, fake_sec=a.fake_sec, crop_px=a.vlm_crop_px)
-    print(f"[준비] VLM {a.vlm}" + (f" ({vlm.device}) {ms(t)}ms" if a.vlm == "qwen" else "")
+    vlm = VLM(a.vlm, fake_sec=a.fake_sec, crop_px=a.vlm_crop_px, url=a.vlm_url)
+    print(f"[준비] VLM {a.vlm}" + (f" ({vlm.device}) {ms(t)}ms" if a.vlm in ("qwen", "gguf") else "")
           + (f", 설명 입력 {'탐지 조각 긴 변 ' + str(a.vlm_crop_px) + 'px' if a.vlm_crop_px else '사진 전체'}"
              if a.vlm != "none" else "")
           + (f", 설명 {'차례대로' if a.sync else '따로 도는 스레드에서'}" if a.vlm != "none" else ""))
@@ -313,7 +315,7 @@ def main():
         print(f"[준비] 후보 검증기 켬: 알람은 conf 1등으로 먼저 내고, P(예) {VERIFY_TAU} 이상인 "
               f"탐지로 위치를 고쳐 다시 낸다" + (" (차례대로)" if a.sync else " (따로 도는 스레드에서)"))
     stats = {"frames": 0, "detections": 0, "alerts": 0, "merged": 0, "fail": 0, "verify_skip": 0,
-             "relocated": 0, "verify_saved": 0, "occluded": 0, "updated": 0, "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "truth_err": {}}
+             "relocated": 0, "verify_saved": 0, "verify_stale": 0, "occluded": 0, "updated": 0, "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "truth_err": {}}
     lock = threading.Lock()      # events, stats 를 검증 스레드와 같이 쓴다
     latest = {}                  # alert_id -> 마지막으로 낸 알람 (갱신할 때 고쳐 쓴다)
     boxes = {}                   # detection_id -> bbox (설명에 넣을 탐지 조각)
@@ -482,6 +484,11 @@ def main():
 
     def check_update(aid, det, image):
         """갱신된 알람의 새 탐지를 검증기로 확인해 verifier 를 채운다."""
+        with lock:     # 줄 서 있는 동안 또 갱신됐으면 묻지 않는다 (CPU 에서 한 번 12초, 7.3 실측)
+            cur = latest.get(aid)
+            if not cur or cur["detection_id"] != det.get("id"):
+                stats["verify_stale"] += 1
+                return
         det["_p_smoke"], det["_p_ms"] = vlm.p_smoke(image, det["bbox"])
         with lock:
             cur = latest.get(aid)
@@ -608,7 +615,7 @@ def main():
           f"(같은 사건으로 묶음 {stats['merged']}, 좌표 변환 실패 {stats['fail']}, "
           f"검증기 미통과 {stats['verify_skip']}, 검증기로 위치 수정 {stats['relocated']}, "
           f"밑동 가림으로 위치 수정 {stats['occluded']}, 알람 갱신 {stats['updated']}, "
-          f"묶여서 검증 생략 {stats['verify_saved']})")
+          f"묶여서 검증 생략 {stats['verify_saved']}, 또 갱신되어 검증 생략 {stats['verify_stale']})")
     print("  판정: " + ", ".join(f"{k} {v}" for k, v in stats["verdict"].items()))
     print(f"  마지막 알람까지 {t_alerts_done}ms, 설명까지 포함 {ms(t_run)}ms")
     for key, label in (("watch_lag", "사진 생김 → 탐지 끝"), ("watch_done", "사진 생김 → 그 장의 알람까지")):
