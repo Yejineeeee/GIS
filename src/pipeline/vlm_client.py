@@ -10,6 +10,11 @@ tools/run_structured.py와 같다. 바꾸면 비교 실험과 어긋나므로 �
     fake   고정된 사실을 돌려준다. 연결 확인용이며 결과로 쓰면 안 된다
     qwen   Qwen2.5-VL-3B 4bit(nf4 이중 양자화). GPU가 있으면 GPU, 없으면 CPU
 
+설명 입력 (11/19 회의, docs/inputs_cpu.md)
+    observe() 는 사진 전체가 아니라 탐지 조각을 넣는다. 탐지 상자 그대로(여백 없음, 최소 96px)
+    자르고 긴 변을 360px 로 줄인다(crop_px). CPU 4코어에서 사진 전체 48초 → 조각 360 중앙값 9초쯤,
+    연기 인식은 유지(67/70). 연기가 아닌 것을 거르는 일은 검증기가 맡는다. crop_px=0 이면 예전처럼 전체
+
 후보 검증기 (WBS 4.7, docs/vlm_base_pick.md)
     p_smoke() 는 탐지 박스 주변을 잘라 "연기가 있는가"를 묻고 P(예)를 돌려준다.
     설명과 같은 모델을 쓴다. tools/vlm_verify.py 와 질문, 자르기, 계산이 같다.
@@ -47,6 +52,20 @@ MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"
 VERIFY_PROMPT = "이 사진에 연기가 있는가. 예 또는 아니오로만 답하라."
 VERIFY_YES, VERIFY_NO = 127027, 52959    # "예", "아"(아니오의 첫 토큰), Qwen2.5-VL 토크나이저
 VERIFY_PX = 448
+DESC_MIN_SIDE = 96       # 설명 조각이 너무 작으면 모델이 아무것도 못 본다 (tools/prep_crops.py 와 같음)
+
+
+def crop_desc(img, bbox, crop_px=360):
+    """설명용 탐지 조각. 상자 그대로(최소 96px) 자르고 긴 변을 crop_px 로 줄인다
+    (tools/measure_inputs_cpu.py 의 조각과 같음. 거기서는 프레임의 탐지 상자를 모두 감쌌다)."""
+    W, H = img.size
+    x, y, w, h = bbox
+    cx, cy = x + w / 2, y + h / 2
+    w, h = max(w, DESC_MIN_SIDE), max(h, DESC_MIN_SIDE)
+    crop = img.crop((max(0, int(cx - w / 2)), max(0, int(cy - h / 2)),
+                     min(W, int(cx + w / 2)), min(H, int(cy + h / 2))))
+    crop.thumbnail((crop_px, crop_px))
+    return crop
 
 
 def crop_det(img, bbox, margin=0.25, min_side=160):
@@ -82,8 +101,9 @@ def _tokenizer_data(tokenizer):
 
 
 class VLM:
-    def __init__(self, mode="none", model_id=MODEL_ID, fake_sec=0.0):
+    def __init__(self, mode="none", model_id=MODEL_ID, fake_sec=0.0, crop_px=360):
         self.mode = mode
+        self.crop_px = crop_px        # 설명에 넣는 탐지 조각의 긴 변. 0 이면 사진 전체
         self.device = None
         self.fake_sec = fake_sec      # fake 모드에서 VLM이 걸리는 시간을 흉내 낸다
         self.lock = threading.Lock()  # 설명 스레드와 검증기가 같은 모델을 번갈아 쓴다
@@ -110,8 +130,8 @@ class VLM:
             model_id, quantization_config=quant, device_map=self.device, dtype=dtype)
         self.data = _tokenizer_data(self.processor.tokenizer)
 
-    def observe(self, image_path):
-        """(observed 또는 None, 걸린 ms, 원문)을 돌려준다."""
+    def observe(self, image_path, bbox=None):
+        """(observed 또는 None, 걸린 ms, 원문)을 돌려준다. bbox 가 있고 crop_px 가 0 이 아니면 탐지 조각을 넣는다."""
         t0 = time.perf_counter()
         if self.mode == "none":
             return None, None, ""
@@ -124,7 +144,10 @@ class VLM:
         from PIL import Image
         from lmformatenforcer import TokenEnforcer, JsonSchemaParser
         image = Image.open(image_path).convert("RGB")
-        image.thumbnail((1024, 1024))              # run_structured.py 와 같음
+        if bbox and self.crop_px:
+            image = crop_desc(image, bbox, self.crop_px)
+        else:
+            image.thumbnail((1024, 1024))          # run_structured.py 와 같음
         msg = [{"role": "user", "content": [{"type": "image", "image": image},
                                             {"type": "text", "text": PROMPT}]}]
         enforcer = TokenEnforcer(self.data, JsonSchemaParser(SCHEMA))

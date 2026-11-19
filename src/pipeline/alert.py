@@ -6,7 +6,12 @@
     2. 설명은 Describer 가 따로 도는 스레드에서 만들고, 끝나면 같은 alert_id 로 다시 낸다
 VLM이 수십 초 걸려도 다음 프레임의 탐지와 알람은 기다리지 않는다.
 
-형식은 docs/schema.md 알람(v0.3)을 따른다. 형식에 없는 값은 debug.jsonl 에 따로 남긴다.
+형식은 docs/schema.md 알람(v0.4)을 따른다. 형식에 없는 값은 debug.jsonl 에 따로 남긴다.
+
+v0.4 (11/19 회의)
+    risk      위험도 {level, reason}. 알람을 낼 때마다 src/vlm/risk.py 로 다시 계산한다
+    verifier  검증기(4.7)가 탐지 조각에서 본 결과 {p_smoke, passed}. 검증 전이나 검증기를 끄면 null
+    evidence.nearest_building_m  가장 가까운 건물까지 거리 (지리 조회)
 """
 import copy
 import json
@@ -16,10 +21,11 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import risk
 import templates
 import verify
 
-SCHEMA_VERSION = "0.3"
+SCHEMA_VERSION = "0.4"
 KST = timezone(timedelta(hours=9))
 
 
@@ -44,6 +50,8 @@ def make_alert(alert_id, det, position, verdict, land_use, rule, evidence, laten
         "land_use": land_use,
         "verdict_rule": rule,
         "evidence": evidence,
+        "risk": None,
+        "verifier": None,
         "observed": None,
         "description": None,
         "description_method": None,
@@ -69,6 +77,10 @@ class Publisher:
         self.lock = threading.Lock()
 
     def send(self, alert):
+        # 위험도는 판정, 반경 안 건물, 검증기, 불꽃(설명)에 따라 바뀐다. 낼 때마다 다시 계산한다
+        if "risk" in alert:
+            r = risk.assess(alert)
+            alert["risk"] = {"level": r["level"], "reason": r["reason"]}
         with self.lock:
             path = self.out / "alerts" / f"{alert['alert_id']}.json"
             tmp = path.with_suffix(".tmp")
@@ -100,7 +112,8 @@ class Describer:
         self.vlm, self.pub, self.sync = vlm, pub, sync
         self.done = []                 # (alert_id, 걸린 ms, 문장 또는 실패 사유)
         self.yield_to = None           # 참을 돌려주는 동안 설명을 미룬다 (같은 GPU 의 검증기 먼저)
-        self.current = None            # alert_id -> 지금 알람의 detection_id. 그 사이 갱신됐으면 옛 설명을 내지 않는다
+        self.current = None            # alert_id -> 지금 알람(dict). 그 사이 갱신됐으면 옛 설명을 내지 않는다
+        self.bbox_of = None            # detection_id -> bbox. 설명에 탐지 조각을 넣을 때 쓴다 (11/19 회의)
         self.q = queue.Queue()
         if not sync:
             self.th = threading.Thread(target=self._loop, daemon=True)
@@ -124,7 +137,7 @@ class Describer:
         """이 설명 작업이 만들어진 뒤 같은 alert_id 가 다른 탐지로 갱신됐는가."""
         if not self.current:
             return False
-        now = self.current(alert["alert_id"])
+        now = (self.current(alert["alert_id"]) or {}).get("detection_id")
         if now is not None and now != alert["detection_id"]:
             self.pub.note(alert_id=alert["alert_id"], stage="설명", skipped="알람이 갱신되어 옛 설명을 내지 않음",
                           detection_id=alert["detection_id"], current=now)
@@ -152,11 +165,15 @@ class Describer:
             time.sleep(0.1)
         if self._stale(alert):
             return
-        observed, vlm_ms, raw = self.vlm.observe(str(image_path) if image_path else None)
+        bbox = self.bbox_of(alert["detection_id"]) if self.bbox_of else None
+        observed, vlm_ms, raw = self.vlm.observe(str(image_path) if image_path else None, bbox)
         if observed is None:
             self.pub.note(alert_id=aid, stage="설명", error=f"스키마 실패: {raw[:200]}")
             print(f"     {aid} 설명 실패: VLM 출력이 스키마와 다름")
             return
+        cur = self.current(aid) if self.current else None
+        if cur is not None:            # 설명을 기다리는 동안 검증기가 낸 결과를 문장과 알람에 반영한다
+            alert["verifier"] = copy.deepcopy(cur.get("verifier"))
         desc = templates.build(observed, alert)
         alert["observed"] = observed
         alert["description"] = desc
@@ -167,6 +184,11 @@ class Describer:
         if self._stale(alert):     # 설명을 만드는 동안 알람이 갱신됐다. 새 위치의 설명이 뒤따른다
             return
         self.pub.send(alert)
+        if cur is not None:            # 파이프라인이 들고 있는 알람에도 설명을 써 둔다 (다음에 다시 낼 때 지워지지 않게)
+            for k in ("observed", "description", "description_method", "time", "risk"):
+                cur[k] = copy.deepcopy(alert[k])
+            cur["latency_ms"]["vlm"] = alert["latency_ms"]["vlm"]
+            cur["latency_ms"]["alert_to_description"] = alert["latency_ms"]["alert_to_description"]
         bad = verify.check(desc, alert, observed)
         self.pub.note(alert_id=aid, stage="설명", violations=bad, raw=raw)
         self.done.append((aid, alert["latency_ms"]["alert_to_description"], desc))
