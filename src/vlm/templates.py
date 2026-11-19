@@ -51,55 +51,106 @@ def _what(observed, use_vlm_facts=False):
     return head
 
 
-def _where(alert):
+def _named(use, rich):
+    """용도 이름. rich 면 반경 안 비율을 붙인다: 자연녹지지역(58%)."""
+    ratio = use.get("ratio")
+    if rich and ratio is not None:
+        return f"{use['name']}({round(ratio * 100)}%)"
+    return use["name"]
+
+
+def _where(alert, rich=False):
     """어디인가. 판정에 따라 쓸 것이 정해진다."""
     land = [u for u in (alert.get("land_use") or [])
             if u.get("name") and u["name"] not in ("없음", "미지정")]
     first = land[0]["name"] if land else None
     second = land[1]["name"] if len(land) > 1 else None
-    radius = (alert.get("position") or {}).get("error_radius_m")
+    pos = alert.get("position") or {}
+    radius = pos.get("error_radius_m")
     verdict = alert.get("location_verdict")
 
     if verdict == "확정":
-        base = f"{first}에서 발생했다" if first else "위치가 확인되었다"
+        base = f"{_named(land[0], rich)}에서 발생했다" if first else "위치가 확인되었다"
         return f"{base}. 좌표 오차 반경은 {radius}미터다" if radius else base
     if verdict == "모호":
         if first and second:
-            body = f"{first}{_josa(first, '과', '와')} {second} 중 하나로 보인다"
+            body = (f"{_named(land[0], rich)}{_josa(first, '과', '와')} "
+                    f"{_named(land[1], rich)} 중 하나로 보인다")
         elif first:
-            body = f"{first}{_josa(first, '으로', '로')} 보이나 확인이 필요하다"
+            body = f"{_named(land[0], rich)}{_josa(first, '으로', '로')} 보이나 확인이 필요하다"
         else:
             body = "용도를 특정하기 어렵다"
         return f"오차 반경 {radius}미터 안이라 {body}" if radius else body
-    # 미확정. 용도 이름을 쓰지 않는다.
-    if radius:
-        return f"좌표 오차 반경이 {radius}미터여서 정확한 용도는 알 수 없다"
-    return "정확한 용도는 알 수 없다"
+    # 미확정. 용도 이름을 쓰지 않는다. 대신 좌표로 어디인지 알린다.
+    text = (f"좌표 오차 반경이 {radius}미터여서 정확한 용도는 알 수 없다" if radius
+            else "정확한 용도는 알 수 없다")
+    if rich and pos.get("lat") is not None and pos.get("lon") is not None:
+        text += f". 추정 위치는 위도 {pos['lat']:.4f}, 경도 {pos['lon']:.4f} 부근이다"
+    return text
 
 
-def _near(observed, alert):
-    """가까이에 무엇이 있는가."""
-    parts = []
-    near = TERRAIN_NEAR.get(observed.get("terrain"))
-    if near:
-        parts.append(near)
-    n = (alert.get("evidence") or {}).get("buildings_in_radius")
+def _near(observed, alert, rich=False):
+    """가까이에 무엇이 있는가.
+
+    rich 면 VLM 이 답한 지형("주변이 산림이다")을 쓰지 않는다. 검증하지 않은 답이고, 용도지역과
+    어긋나는 문장이 나온다. 대신 알람에 있는 값(건물 수, 가장 가까운 건물, 경사)을 쓴다.
+    """
+    ev = alert.get("evidence") or {}
+    n = ev.get("buildings_in_radius")
+    if not rich:
+        parts = []
+        near = TERRAIN_NEAR.get(observed.get("terrain"))
+        if near:
+            parts.append(near)
+        if n:
+            parts.append(f"반경 안 건물은 {n}개다")
+        return ". ".join(parts) if parts else None
+
+    slope = ev.get("terrain_slope_deg", ev.get("slope_deg"))
+    tail = f"경사는 {round(slope)}도다" if slope is not None else None
     if n:
-        parts.append(f"반경 안 건물은 {n}개다")
-    return ". ".join(parts) if parts else None
+        text = f"반경 안 건물은 {n}개"
+        d = ev.get("nearest_building_m")          # 지리 조회가 이 값을 내면 쓴다
+        if d is not None:
+            text += f", 가장 가까운 건물까지 약 {round(d)}미터"
+        return f"{text}, {tail}" if tail else text + "다"
+    if n == 0:
+        return f"반경 안에 건물이 없고 {tail}" if tail else "반경 안에 건물이 없다"
+    return tail
 
 
-def build(observed, alert, use_vlm_facts=False):
+def _risk(observed, alert):
+    """위험도와 그 근거, 권고. 규칙은 risk.py 에 있다(초안)."""
+    import risk
+    r = risk.assess(alert, flame=bool(observed.get("flame_visible")))
+    text = f"위험도 {r['level']}: {r['reason']}"
+    # 권고는 위치가 확실하지 않을 때만. 3번 줄의 근거에는 이미 들어 있다
+    if alert.get("location_verdict") == "모호":
+        text += ". 접근해 위치를 다시 확인할 것"
+    return text
+
+
+def build(observed, alert, use_vlm_facts=False, rich=True):
     """알람 설명 문장을 만든다.
 
+    rich=True (기본)  용도 비율, 미확정일 때 좌표, 경사, 위험도와 근거, 권고를 담는다.
+                      전부 알람에 있는 계산값이다. VLM 이 답한 지형은 쓰지 않는다
+    rich=False        그 전의 짧은 문장. 전후 비교용(tools/element_coverage.py)
     use_vlm_facts=True 는 4.6 비교 실험(tools/run_structured.py) 재현용이다. 그때는 VLM 이
-    연기가 없다고 하면 위치와 주변 설명을 붙이지 않는다.
+    연기가 없다고 하면 위치와 주변 설명을 붙이지 않고, 문장도 그때 그대로다.
     """
     observed = observed or {}
+    if use_vlm_facts:
+        rich = False
     if use_vlm_facts and observed and not observed.get("smoke_present"):
         return _what(observed, True) + "."
-    pieces = [_what(observed, use_vlm_facts), _where(alert)]
-    near = _near(observed, alert)
+    what = _what(observed, use_vlm_facts)
+    if rich and (alert.get("verifier") or {}).get("passed"):     # 알람에 이 칸이 생기면 쓴다
+        what = what.replace("연기가 탐지되었다", "연기가 탐지되었다(영상 검증 통과)", 1)
+    pieces = [what, _where(alert, rich)]
+    near = _near(observed, alert, rich)
     if near:
         pieces.append(near)
+    if rich:
+        pieces.append(_risk(observed, alert))
     return ". ".join(p.rstrip(".") for p in pieces if p) + "."
