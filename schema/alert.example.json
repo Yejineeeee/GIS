@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.3",
+  "schema_version": "0.4",
   "alert_id": "a-0007",
   "time": "2026-11-10T14:03:22.000+09:00",
   "detection_id": "V0012-42-0",
@@ -18,9 +18,12 @@
   "verdict_rule": { "rule": "최다비율", "threshold": 0.70, "samples": 30 },
   "evidence": {
     "buildings_in_radius": 12,
+    "nearest_building_m": 38.5,
     "terrain_slope_deg": 21,
     "dem_resolution_m": 90
   },
+  "risk": { "level": "높음", "reason": "반경 안에 주거지나 건물이 있다" },
+  "verifier": { "p_smoke": 0.94, "passed": true },
   "observed": {
     "smoke_present": true,
     "smoke_color": "검은색",
