@@ -12,6 +12,9 @@ accelerate==1.15.0
 lm-format-enforcer==0.11.3
 ultralytics==8.4.202
 
+# 현장 기기 측정 (tools/measure_device.py, 7.3)
+psutil==7.2.2
+
 # 이미지와 수치
 pillow==13.0.0
 numpy==2.4.6
