@@ -75,27 +75,31 @@ python src/pipeline/run.py --frames 사진폴더 --weights best.pt \
 - 기록은 파이프라인의 `alerts.jsonl`(알람을 낼 때마다 한 줄)에서 만든다. 이 파일이 없는 경우
   (`tools/replay_alerts.py`, `tools/live_estimate.py` 처럼 `alerts/` 만 덮어쓸 때)는 화면이 열려 있는 동안
   1초마다 본 변화를 쌓는다. 그래서 이때는 화면을 먼저 켜 두어야 처음부터 기록된다
-- 알람 형식(schema v0.3)은 바꾸지 않았다
+- 갱신 기록은 알람 형식에 칸을 두지 않고 `alerts.jsonl`로 만든다
 
-### 영상 검증 (VLM 결과)
+### 영상 검증 (11/19 회의 뒤 알람 v0.4)
+
+검증기가 탐지 조각에서 본 결과(`verifier`)를 쓴다. 사진 일부만 보고 답한 설명용 `observed`보다 정확하다.
 
 | 표시 | 조건 |
 |---|---|
-| 영상 검증 통과 | `observed.smoke_present` 가 true |
-| 헛탐지 의심 | `observed.smoke_present` 가 false (사진을 흐리게 보여 줌) |
-| 검증 중 | `description` 이 아직 null |
+| 영상 검증 통과 | `verifier.passed` 가 true |
+| 헛탐지 의심 | `verifier.passed` 가 false (사진을 흐리게 보여 줌) |
+| 검증 중 | `verifier` 가 아직 null 이고 설명도 없음 |
+| (표시 없음) | 검증기를 끄고 돌림 (`--no-verify`, `--vlm none`) |
 
-### 위험도 (임시 규칙)
+칩에 마우스를 올리면 P(연기)가 보인다. 예전 알람(v0.3)은 `observed.smoke_present` 로 대신한다.
 
-알람 JSON에 `risk: {level, reason}` 이 있으면 그 값을 그대로 쓴다. 없으면 `index.html`의 `riskOf()` 임시 규칙:
+### 위험도
 
-| 단계 | 조건 (위에서부터 먼저 맞는 것) |
-|---|---|
-| 확인 필요 | 헛탐지 의심, 또는 판정이 미확정 |
-| 높음 | 반경 안 건물 1개 이상, 또는 산림성 용도·지형이면서 경사 15° 이상 |
-| 보통 | 그 밖 |
+알람의 `risk: {level, reason}` 을 그대로 보여 준다(높음 ●●● / 보통 ●●○ / 낮음 / 확인 필요 ●○○).
+규칙은 `src/vlm/risk.py` 하나뿐이다(`docs/schema.md` "risk, verifier"). 설명 문장의 "위험도 …"도 같은 값이다.
+`risk` 가 없는 예전 알람만 `index.html` 의 `riskOf()` 임시 규칙으로 표시하고 "(임시 규칙)"을 붙인다.
 
-팀 규칙이 정해지면 `riskOf()`만 바꾸거나, 파이프라인이 `risk`를 채우게 한다(schema v0.4).
+### 시트 지표
+
+오차 반경, 반경 안 건물, 가장 가까운 건물(`evidence.nearest_building_m`), 주변 경사. 알람·설명까지 걸린 시간은
+시트 위 한 줄(시각 · 드론 · 신고 지점에서 거리 옆)로 옮겼다.
 
 ## 확인한 것 (11/15)
 
