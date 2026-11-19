@@ -12,9 +12,10 @@
 <style>
   /* 시안 A-3 (Figma "엣지아이 관제 대시보드") */
   :root {
-    --bg: #EEEEEC; --card: #FFFFFF; --soft: #F2F2F0; --line: rgba(10,10,10,.09); --track: #D3D3D0;
+    --bg: #FBFBFA; --card: #FFFFFF; --soft: #F0F0EE; --line: rgba(10,10,10,.09); --track: #D3D3D0;
     --ink: #0A0A0A; --ink2: #2A2A2A; --muted: #6B6B6B; --faint: #B5B5B2;
     --confirm: #E10600; --ambig: #E59A00; --unsure: #8A8A87; --ok: #0E9F4A; --live: #1FA855;
+    /* 빨강은 위험도에만 쓴다. 판정은 위치를 얼마나 아는지라 파랑의 진하기로 나눈다(스크립트의 COLOR) */
     --shadow: 0 4px 14px rgba(0,0,0,.06);
   }
   * { box-sizing: border-box; }
@@ -33,27 +34,26 @@
           background: var(--card); font-size: 12px; font-weight: 500; color: var(--ink2); }
   .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--live); }
   .live.off { color: var(--confirm); } .live.off i { background: var(--confirm); }
-  .where { font-size: 13px; color: var(--muted); margin: -4px 0 -8px; }
-  .hero { display: flex; align-items: center; gap: 14px; }
-  .hero .big { font-size: 104px; line-height: 100px; letter-spacing: -0.04em; }
-  .hero b { display: block; font-size: 24px; font-weight: 700; letter-spacing: -0.03em; }
-  .hero div span { font-size: 13px; color: var(--muted); }
+  /* 지역 이름을 제목으로, 그 아래 한 줄에 알람 수 */
+  .where { font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); margin: 2px 0 -10px; }
+  .hero { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+  .hero b { font-size: 15px; font-weight: 700; color: var(--ink); }
 
-  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--card); border-radius: 18px; padding: 14px 16px 16px; }
-  .stat { display: flex; flex-direction: column; gap: 6px; border: 0; background: none; text-align: left; padding: 0 0 0 16px; cursor: pointer;
-          border-left: 1px solid var(--line); border-radius: 0; }
-  .stat:first-child { padding-left: 0; border-left: 0; }
-  .stat .lab { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
-  .stat .lab i { width: 8px; height: 8px; border-radius: 50%; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; background: var(--card); border-radius: 18px; padding: 8px;
+           box-shadow: 0 2px 8px rgba(0,0,0,.04), inset 0 0 0 1px rgba(10,10,10,.05); }
+  .stat { display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; text-align: center; padding: 10px 12px; cursor: pointer;
+          border: 1.5px solid transparent; border-radius: 12px; transition: background .15s, border-color .15s; }
+  .stat:hover { background: var(--bg); }
+  .stat .lab { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+  .stat .lab i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .stat .n { font-size: 40px; line-height: 44px; }
   .stat .n.zero { color: var(--faint); }
+  .stat[aria-pressed="true"] { background: color-mix(in srgb, var(--c) 10%, transparent); border-color: color-mix(in srgb, var(--c) 70%, transparent); }
   .stat[aria-pressed="true"] .lab { color: var(--ink); font-weight: 700; }
-  .stat[aria-pressed="true"] .lab::after { content: "· 보는 중"; font-weight: 500; color: var(--muted); }
-  .stat:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; border-radius: 6px; }
-  .dots { display: flex; gap: 6px; } .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--track); }
+  .stat:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-  .tlhead { display: flex; align-items: baseline; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
-  .tlhead span { margin-left: auto; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+  .tlhead { display: flex; align-items: baseline; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+  .tlhead span { margin-left: auto; font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--muted); }
   .tl { flex: 1; min-height: 0; overflow-y: auto; margin: -4px -6px 0 0; padding: 4px 6px 4px 0; }
   .item { display: grid; grid-template-columns: 58px 12px minmax(0, 1fr); gap: 0 12px; padding-bottom: 2px; position: relative; cursor: pointer;
           width: 100%; border: 0; background: none; text-align: left; }
@@ -64,17 +64,21 @@
   .item .rail::after { content: ""; position: absolute; left: 0; top: 16px; width: 12px; height: 12px; border-radius: 50%;
                        box-sizing: border-box; border: 2px solid var(--vc); background: var(--bg); }
   .item.sel .rail::after { background: var(--vc); }
-  .item .c { padding: 10px 14px; border-radius: 14px; display: flex; flex-direction: column; gap: 5px; }
-  .item.sel .c { background: var(--card); box-shadow: var(--shadow); }
+  .item .c { padding: 10px 12px; border-radius: 14px; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .item.sel .c { background: var(--card); box-shadow: 0 2px 8px rgba(0,0,0,.04), inset 0 0 0 1px rgba(10,10,10,.05); }
   .item:hover:not(.sel) .c { background: rgba(255,255,255,.55); }
   .item:focus-visible { outline: none; } .item:focus-visible .c { outline: 2px solid var(--ink); }
-  .item .h { display: flex; align-items: center; gap: 8px; }
-  .item .id { font-size: 16px; }
+  .item .h { display: flex; align-items: center; gap: 6px 5px; }
+  .item .chip.risk { padding: 2px 8px 2px 6px; gap: 5px; }
+  @media (max-width: 480px) { .item .h { flex-wrap: wrap; } }   /* 아주 좁은 화면에서만 칩을 다음 줄로 */
+  .item .push { margin-left: auto; flex: none; }
+  .item .id { white-space: nowrap; }
+  .item .id { font-size: 16px; font-weight: 700; }
   .item .s { font-size: 13px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item.fresh .c { animation: fresh 2.4s ease-out; }
   @keyframes fresh { from { background: #FFF1CC; } }
   .empty { color: var(--muted); text-align: center; padding: 40px 8px; font-size: 13px; }
-  .upd { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 99px; background: var(--ink); color: #fff; white-space: nowrap; }
+  .upd { font-size: 12px; line-height: 18px; font-weight: 700; padding: 1px 9px; border-radius: 99px; background: var(--ink); color: #fff; white-space: nowrap; }
   .hist { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
   .hist .st { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 99px; background: var(--soft); color: var(--ink2); }
   .hist .st i { width: 7px; height: 7px; border-radius: 50%; background: var(--vc); }
@@ -85,13 +89,15 @@
   .report-pin i { width: 2px; height: 10px; background: #0A0A0A; }
   .report-pin em { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 3px solid #0A0A0A; margin-top: -1px; }
 
-  .perf { display: flex; gap: 14px; }
-  .perf div { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
-  .perf b { font-size: 15px; color: var(--ink); }
+  .perf { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+  .perf b { font-weight: 500; color: var(--ink2); }
+  .perf .st { display: inline-flex; align-items: center; gap: 5px; color: var(--ink2); }
+  .perf .st i { width: 7px; height: 7px; border-radius: 50%; background: #B5B5B2; }
+  .perf .st.warn { color: #B26F00; font-weight: 700; } .perf .st.warn i { background: #E59A00; }
 
   /* ---------- 칩 ---------- */
   .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .vchip { font-size: 12px; font-weight: 700; padding: 1px 9px; border-radius: 99px; color: #fff; background: var(--vc); white-space: nowrap; }
+  .vchip { font-size: 12px; line-height: 18px; font-weight: 700; padding: 1px 9px; border-radius: 99px; color: #fff; background: var(--vc); white-space: nowrap; }
   .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 2px 10px 2px 8px; border-radius: 99px; white-space: nowrap; }
   .chip.risk { background: var(--card); box-shadow: inset 0 0 0 1px rgba(10,10,10,.14); }
   .chip.risk.확인 { color: var(--muted); }
@@ -107,7 +113,10 @@
   .leaflet-container { font: inherit; }
   .leaflet-control-zoom { border: 0 !important; border-radius: 14px !important; overflow: hidden; box-shadow: var(--shadow) !important; margin: 76px 20px 0 0 !important; }
   .leaflet-control-zoom a { width: 40px !important; height: 40px !important; line-height: 40px !important; color: var(--ink) !important; border-color: var(--line) !important; }
-  .leaflet-control-scale-line { background: rgba(255,255,255,.85); border-color: var(--ink2); color: var(--ink2); }
+  .leaflet-control-scale-line { background: none; border-color: var(--ink2); color: var(--ink2); font-weight: 500;
+    text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff; }
+  /* 축척은 확대, 축소 버튼 바로 아래 */
+  .leaflet-top.leaflet-right .leaflet-control-scale { margin: 8px 20px 0 0; }
   .leaflet-control-attribution { background: rgba(255,255,255,.8) !important; color: var(--muted) !important; border-radius: 6px 0 0 0; }
   .leaflet-tooltip.callout { background: var(--card); color: var(--ink); border: 0; border-radius: 12px; box-shadow: var(--shadow); padding: 7px 11px; font-size: 13px; font-weight: 500; }
   .leaflet-tooltip.callout small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
@@ -133,7 +142,7 @@
   .sheet { left: 20px; right: 20px; bottom: 20px; background: var(--card); border-radius: 20px; box-shadow: var(--shadow);
            display: grid; grid-template-columns: 268px minmax(0, 1fr); gap: 20px; padding: 16px 24px 16px 16px; }
   .sheet[hidden] { display: none; }
-  .shot { position: relative; border-radius: 14px; overflow: hidden; background: var(--soft); aspect-ratio: 4 / 3; align-self: start; }
+  .shot { position: relative; border-radius: 14px; overflow: hidden; background: var(--soft); aspect-ratio: 4 / 3; align-self: center; }
   .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .shot.dim img { opacity: .6; }
   .shot .box { position: absolute; border: 2px solid var(--confirm); border-radius: 3px; background: rgba(225,6,0,.12); }
@@ -141,31 +150,56 @@
   .shot .noimg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
   .info { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .info .h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .info .id { font-size: 24px; line-height: 1; }
-  .info .meta { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .info .id { font-size: 24px; line-height: 1; font-weight: 700; }
+  /* 알람 이름 아래 두 줄: 촬영 정보, 반경 기록. 모두 왼쪽 정렬 */
+  .info .meta { margin-left: auto; font-size: 12px; color: var(--ink); white-space: nowrap; display: flex; row-gap: 2px; flex-wrap: wrap; }
+  .info .meta span + span::before { content: "|"; margin: 0 8px; color: var(--faint); }
   .why { font-size: 13px; color: var(--ink2); } .why b { color: var(--vc); margin-right: 6px; }
   .why .tmp { color: var(--faint); }
   .desc { margin: 0; font-size: 15px; line-height: 22px; }
+  .desc .lab { font-size: 13px; font-weight: 700; color: var(--ink); margin-right: 6px; }
   .pending { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
   .shimmer { height: 10px; border-radius: 4px; background: linear-gradient(90deg, #EEE 0%, #E2E2E0 50%, #EEE 100%); background-size: 200% 100%; animation: sh 1.6s linear infinite; }
   @keyframes sh { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .metrics div { display: flex; flex-direction: column; padding: 0 16px; border-left: 1px solid var(--line); }
-  .metrics div:first-child { padding-left: 0; border-left: 0; }
+  .metrics div { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 16px; border-left: 1px solid var(--line); }
+  .metrics div:first-child { border-left: 0; }
   .metrics span { font-size: 12px; color: var(--muted); }
   .metrics b { font-size: 28px; line-height: 34px; } .metrics b small { font-size: 13px; color: var(--muted); margin-left: 2px; }
   .lurow { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink2); }
   .stack { flex: 1; display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--soft); }
 
+  /* 높이가 낮은 화면(예: 1280x720 프로젝터)에서는 시트가 지도를 덮지 않게 오른쪽 세로 패널로 둔다 */
+  @media (min-width: 1001px) and (max-height: 820px) {
+    .sheet:not([hidden]) { left: auto; top: 72px; bottom: 20px; width: 360px; display: flex; flex-direction: column; gap: 12px;
+             padding: 14px 16px; overflow-y: auto; }
+    .sheet .shot, .sheet .info { flex: none; }
+    .shot { aspect-ratio: auto !important; align-self: stretch; }       /* 세로 패널에서는 사진 높이를 그림대로 두어 아래 줄과 겹치지 않게 */
+    .shot img { height: auto; }
+    .info .meta { margin-left: 0; width: 100%; white-space: normal; gap: 2px 12px; }
+    .info .meta span + span::before { content: none; }   /* 좁아서 줄이 바뀌면 | 가 줄 앞에 와서 뺀다 */
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }   /* 수치 네 칸은 2x2 */
+    .metrics div:nth-child(3) { border-left: 0; }
+    .metrics b { font-size: 22px; line-height: 28px; }
+  }
+  @media (max-width: 600px) {
+    .leaflet-control-zoom { display: none; }        /* 휴대폰은 손가락으로 확대한다. 버튼이 위쪽 칩과 겹친다 */
+    .leaflet-top.leaflet-right .leaflet-control-scale { margin: 60px 12px 0 0; }   /* 일반/위성 버튼 아래 */
+    .tog { padding: 5px 10px 5px 9px; font-size: 12px; }
+    .chipsbar { max-width: calc(100% - 120px); }
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }   /* 수치 네 칸은 2x2 */
+    .metrics div:nth-child(3) { border-left: 0; }
+  }
   @media (max-width: 1000px) {
     body { display: flex; flex-direction: column; height: auto; padding: 16px; gap: 16px; }
     .tl { max-height: 420px; }
     .mapcard { flex: none; overflow: visible; background: none; border-radius: 0; }
     #map { position: relative; height: 440px; border-radius: 24px; overflow: hidden; }
     .sheet { position: static; margin-top: 12px; grid-template-columns: 1fr; padding: 16px; }
-    .info .meta { margin-left: 0; width: 100%; }
-    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
-    .metrics div:nth-child(3) { padding-left: 0; border-left: 0; }
+    .info .meta { margin-left: 0; width: 100%; gap: 2px 12px; }
+    .info .meta span + span::before { content: none; }
+    .metrics div { padding: 0 10px; }
+    .metrics b { font-size: 20px; line-height: 26px; }
     .chipsbar { left: 12px; top: 12px; max-width: calc(100% - 150px); } .seg { right: 12px; top: 12px; }
     .leaflet-control-zoom { margin: 64px 12px 0 0 !important; }
     .legend { display: none; }
@@ -175,8 +209,8 @@
 <body>
 <section class="left" aria-label="요약과 타임라인">
   <div class="brand">
-    <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="9" fill="#0A0A0A"/><path d="M6 15c2.8-4.6 6-6.5 9-6.5s6.2 1.9 9 6.5c-2.8 4.6-6 6.5-9 6.5S8.8 19.6 6 15z" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="15" cy="15" r="2.8" fill="#E10600"/></svg>
-    <strong>엣지아이 관제</strong>
+    <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="9" fill="#0A0A0A"/><path d="M5.5 15c2.9-4.8 6.2-6.8 9.5-6.8s6.6 2 9.5 6.8c-2.9 4.8-6.2 6.8-9.5 6.8S8.4 19.8 5.5 15z" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="15" cy="15" r="4.2" fill="none" stroke="#4F7BFF" stroke-width="1.4"/><circle cx="15" cy="15" r="2" fill="#4F7BFF"/></svg>
+    <strong>EdgeEye</strong>
     <span class="live" id="live"><i></i><span id="liveText">연결 중…</span></span>
   </div>
   <div class="where" id="where">&nbsp;</div>
@@ -208,7 +242,8 @@
 
 <script src="/vendor/leaflet/leaflet.js"></script>
 <script>
-const COLOR = { "확정": "#E10600", "모호": "#E59A00", "미확정": "#8A8A87" };
+const COLOR = { "확정": "#1D4ED8", "모호": "#6B8FE6", "미확정": "#8A8A87" };   // 판정 (파랑의 진하기)
+const RISK_RED = "#E10600", RISK_AMBER = "#E59A00";                                 // 위험도에만 쓴다
 const DASH = { "확정": null, "모호": "6 4", "미확정": "2 4" };
 const VERDICTS = ["확정", "모호", "미확정"];
 
@@ -229,29 +264,54 @@ const hms = t => { const d = new Date(t); return isNaN(d) ? "" : [d.getHours(), 
 const median = xs => { xs = xs.filter(x => x != null).sort((a, b) => a - b); return xs.length ? xs[Math.floor(xs.length / 2)] : null; };
 const shortLU = n => { n = String(n || ""); return (n.length > 4 ? n.replace(/지역$/, "") : n) || "용도 미상"; };
 
-/* ---- 영상 검증: VLM이 연기를 봤는가 (observed.smoke_present) ---- */
+/* 시트에 보이는 설명. 같은 카드의 칩과 "위험도 근거" 줄에 이미 있는 두 부분만 화면에서 뺀다.
+   알람 파일의 description 은 그대로다(문자 알림 등 문장만 따로 쓰일 때를 위해 templates.py 가 넣는다).
+     "(영상 검증 통과)"  → 검증 칩과 같다
+     "위험도 높음: …"    → 위험도 칩, 위험도 근거 줄과 같다. 모호일 때 붙는 권고는 남긴다 */
+function descView(t) {
+  t = String(t || "").replace("(영상 검증 통과)", "");
+  const i = t.search(/위험도 (높음|보통|낮음|확인 필요): /);
+  if (i < 0) return t;
+  const advice = t.slice(i).includes("접근해 위치를 다시 확인할 것") ? " 접근해 위치를 다시 확인할 것." : "";
+  return (t.slice(0, i).trim() + advice).trim();
+}
+/* 화면에 보이는 알람 이름. "a-0001" 을 "알람 1" 로. 파일 이름과 서버의 alert_id 는 그대로 둔다 */
+const idLabel = id => { const m = /^[a-z]-0*(\d+)$/.exec(id || ""); return m ? `알람 ${m[1]}` : (id || ""); };
+/* ---- 영상 검증 (v0.4, 11/19 회의) ----
+   검증기가 탐지 조각에서 본 결과(verifier)를 쓴다. 사진 전체를 본 설명용 답(observed)보다 정확하다.
+   verifier 가 아직 null 이면 검증 중. 예전 알람(v0.3)은 observed.smoke_present 로 대신한다. */
 function vlmOf(a) {
-  if (!a.description) return "wait";
-  if (!a.observed) return null;
-  return a.observed.smoke_present === false ? "fail" : "pass";
+  if (a.verifier) return a.verifier.passed ? "pass" : "fail";
+  if (a.schema_version === "0.3" && a.observed) return a.observed.smoke_present === false ? "fail" : "pass";
+  if (a.description) return null;      // 검증기를 끄고 돌린 경우 (--no-verify, --vlm none)
+  return "wait";
 }
-/* ---- 위험도: 임시 규칙 ----
-   알람 JSON에 risk 칸(예: {level, reason})이 생기면 그 값을 그대로 쓴다.
-   없으면 아래 임시 규칙. 팀 규칙이 정해지면 이 함수만 바꾸면 된다. */
-const FORESTY = n => /녹지|농림|산림|보전|자연/.test(n || "");
+/* ---- 위험도 ----
+   팀에서 정한 규칙(src/vlm/risk.py 의 assess)과 같다. 위에서부터 먼저 맞는 줄을 쓴다.
+     검증기 미통과 → 확인 필요 / 위치 미확정 → 확인 필요 / 불꽃이 보임 → 높음 / 반경 안에 건물이나 주거지역 → 높음 / 그 밖 → 보통
+   굴뚝 판단 두 줄(낮음, 확인 필요)은 알람에 그 값이 없어 쓰지 않는다.
+   v0.4 알람은 파이프라인이 risk 칸({level, reason})을 채우므로 그 값을 그대로 쓴다.
+   아래 계산은 risk 칸이 없는 예전 알람(v0.3)용이다. */
+const PEOPLE = ["주거지", "건물", "시설"];
 function riskOf(a) {
-  if (a.risk && a.risk.level) return { level: a.risk.level, reason: a.risk.reason || "", tmp: false };
-  const ev = a.evidence || {}, top = (a.land_use || [])[0] || {}, ob = a.observed || {};
-  const b = ev.buildings_in_radius, slope = ev.terrain_slope_deg;
-  const forest = FORESTY(top.name) || ob.terrain === "산림";
-  if (vlmOf(a) === "fail") return { level: "확인 필요", reason: "위치는 계산됐지만 영상에서 연기가 보이지 않음", tmp: true };
-  if (a.location_verdict === "미확정") return { level: "확인 필요", reason: "오차가 커서 지도로 위치를 단정할 수 없음", tmp: true };
-  if (b > 0) return { level: "높음", reason: `반경 안 건물 ${b}개 · 시설 피해 우려`, tmp: true };
-  if (forest && slope >= 15) return { level: "높음", reason: `${top.name || "산림"} · 경사 ${slope}°로 번지기 쉬움`, tmp: true };
-  if (forest) return { level: "보통", reason: `${top.name || "산림"} · 산림 인접 · 반경 안 건물 없음`, tmp: true };
-  return { level: "보통", reason: `${top.name || "용도 미상"} · 반경 안 건물 없음`, tmp: true };
+  if (a.risk && a.risk.level) return { level: a.risk.level, reason: a.risk.reason || "" };
+  const ev = a.evidence || {}, lu = a.land_use || [], ob = a.observed || {};
+  const flame = !!ob.flame_visible;
+  if (a.verifier && a.verifier.passed === false)
+    return { level: "확인 필요", reason: "영상 검증에서 연기가 확인되지 않았다 (헛탐지 의심)" };
+  const n = ev.buildings_in_radius;
+  const buildings = n != null ? n >= 1 : (ev.risk_targets || []).includes("건물");
+  const people = buildings || (ev.risk_targets || []).some(t => PEOPLE.includes(t)) ||
+                 lu.some(u => (u.name || "").includes("주거") && (u.ratio || 0) > 0);
+  if (a.location_verdict === "미확정")
+    return { level: "확인 필요", reason: "위치가 불확실하다. 접근해서 다시 판정한다" + (flame ? ". 불꽃이 보인다" : "") };
+  if (flame) return { level: "높음", reason: "불꽃이 보인다" };
+  if (people) return { level: "높음", reason: "반경 안에 주거지나 건물이 있다" };
+  const uses = lu.map(u => u.name).filter(x => x && x !== "없음" && x !== "미지정").slice(0, 2);
+  return { level: "보통", reason: uses.length ? `반경 안은 ${uses.join(", ")}이다` : "반경 안에 주거지나 건물이 없다" };
 }
-const RISK_DOTS = { "높음": [COLOR["확정"], COLOR["확정"], COLOR["확정"]], "보통": ["#E59A00", "#E59A00", "#D3D3D0"], "확인 필요": ["#B5B5B2", "#D3D3D0", "#D3D3D0"] };
+const RISK_DOTS = { "높음": [RISK_RED, RISK_RED, RISK_RED], "보통": [RISK_AMBER, RISK_AMBER, "#D3D3D0"],
+                    "낮음": ["#0E9F4A", "#D3D3D0", "#D3D3D0"], "확인 필요": ["#B5B5B2", "#D3D3D0", "#D3D3D0"] };
 function riskChip(r) {
   return `<span class="chip risk ${r.level === "확인 필요" ? "확인" : ""}"><em>${RISK_DOTS[r.level].map(c => `<i style="background:${c}"></i>`).join("")}</em>${r.level === "확인 필요" ? "확인 필요" : "위험 " + r.level}</span>`;
 }
@@ -263,14 +323,15 @@ const ICON = {
 function vlmChip(a) {
   const v = vlmOf(a); if (!v) return "";
   const t = { pass: "영상 검증 통과", fail: "헛탐지 의심", wait: "검증 중" }[v];
-  return `<span class="chip vlm ${v === "wait" ? "wait" : ""}">${ICON[v]}${t}</span>`;
+  const tip = a.verifier ? `검증기 P(연기) ${a.verifier.p_smoke}` : "검증기 결과를 기다리는 중";
+  return `<span class="chip vlm ${v === "wait" ? "wait" : ""}" title="${tip}">${ICON[v]}${t}</span>`;
 }
 const vchip = v => `<span class="vchip" style="--vc:${COLOR[v] || COLOR["미확정"]}">${esc(v)}</span>`;
 
 /* ---------- 지도 ---------- */
 const map = L.map("map", { zoomControl: false, attributionControl: false });
 L.control.zoom({ position: "topright" }).addTo(map);
-L.control.scale({ imperial: false, position: "bottomright" }).addTo(map);
+L.control.scale({ imperial: false, position: "topright" }).addTo(map);
 L.control.attribution({ position: "bottomright", prefix: "Leaflet" }).addTo(map);
 
 const state = { alerts: [], extra: {}, selected: null, filter: "전체", known: new Set(), first: true, sig: "",
@@ -303,14 +364,25 @@ const droneLayer = L.layerGroup().addTo(map);
 let luLayer = null, bases = {}, baseNow = null;
 const sheetEl = document.getElementById("sheet");
 
-function sheetPad() { return sheetEl.hidden || getComputedStyle(sheetEl).position !== "absolute" ? 40 : sheetEl.offsetHeight + 44; }
-function placeBottomControls() {
-  const over = getComputedStyle(sheetEl).position === "absolute";
-  document.querySelectorAll(".leaflet-bottom").forEach(el => el.style.bottom = (sheetEl.hidden || !over ? 0 : sheetEl.offsetHeight + 24) + "px");
+/* 시트가 지도 아래를 덮는지(bottom), 오른쪽을 덮는지(side), 지도 밖에 있는지(null) */
+function sheetSide() {
+  if (sheetEl.hidden) return null;
+  const cs = getComputedStyle(sheetEl);
+  if (cs.position !== "absolute") return null;
+  return cs.left === "auto" || parseFloat(cs.left) > 40 ? "side" : "bottom";
 }
+function sheetPad() { return sheetSide() === "bottom" ? sheetEl.offsetHeight + 44 : 40; }
+function sheetPadRight() { return sheetSide() === "side" ? sheetEl.offsetWidth + 60 : 80; }
+function placeBottomControls() {
+  const side = sheetSide();
+  const bottom = side === "bottom" ? sheetEl.offsetHeight + 24 : 0;
+  document.querySelectorAll(".leaflet-bottom").forEach(el => el.style.bottom = bottom + "px");
+  document.querySelectorAll(".leaflet-right").forEach(el => el.style.right = (side === "side" ? sheetEl.offsetWidth + 24 : 0) + "px");
+}
+window.addEventListener("resize", placeBottomControls);
 new ResizeObserver(placeBottomControls).observe(sheetEl);
 function focusOn(pts, maxZoom) {
-  map.flyToBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 120], paddingBottomRight: [80, sheetPad()], maxZoom, duration: .6 });
+  map.flyToBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 120], paddingBottomRight: [sheetPadRight(), sheetPad()], maxZoom, duration: .6 });
 }
 
 function setBase(kind) {
@@ -325,7 +397,10 @@ function toggle(btn, on) { btn.setAttribute("aria-pressed", String(on)); }
 async function init() {
   const cfg = await (await fetch("/api/config")).json();
   map.setView(cfg.center, 15);
-  if (cfg.site_name) { document.getElementById("where").textContent = cfg.site_name; document.title = `엣지아이 관제 · ${cfg.site_name}`; }
+  if (cfg.site_name) {
+    const place = cfg.site_name.split("·").map(x => x.trim()).filter(Boolean).reverse().join(" ");
+    document.getElementById("where").textContent = place; document.title = `엣지아이 관제 (${place})`;
+  }
   bases.map = cfg.vworld_key
     ? L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${cfg.vworld_key}/Base/{z}/{y}/{x}.png`, { maxZoom: 19, attribution: "© V-World" })
     : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" });
@@ -342,7 +417,7 @@ async function init() {
     L.circle(rp, { radius: cfg.report.radius_m, color: "#0A0A0A", weight: 1.5, dashArray: "2 6", opacity: .6, fill: false, interactive: false }).addTo(reportLayer);
     L.marker(rp, { keyboard: false, zIndexOffset: 500, icon: L.divIcon({ className: "", iconSize: [64, 40], iconAnchor: [32, 37],
       html: `<div class="report-pin"><b>신고 지점</b><i></i><em></em></div>` }) })
-      .bindTooltip(`신고 지점 · 수색 반경 ${cfg.report.radius_m}m`, { className: "lu", direction: "top", offset: [0, -34] }).addTo(reportLayer);
+      .bindTooltip(`신고 지점, 수색 반경 ${cfg.report.radius_m}m`, { className: "lu", direction: "top", offset: [0, -34] }).addTo(reportLayer);
     reportLayer.addTo(map);
     if (!state.alerts.length) map.setView(rp, 15);
     const rBtn = document.getElementById("reportToggle"); rBtn.hidden = false;
@@ -396,7 +471,7 @@ function drawAlert(a, ex) {
   }
   L_.center = L.circleMarker(p, { radius: sel ? 6.5 : 5, color: "#fff", weight: 2, fillColor: c, fillOpacity: 1 }).addTo(map).on("click", () => select(key, true));
   const top = (a.land_use || [])[0];
-  L_.center.bindTooltip(`${esc(key)} · ${esc(a.location_verdict)}<small>${top ? esc(top.name) + " · " : ""}반경 ${a.position.error_radius_m}m</small>`,
+  L_.center.bindTooltip(`${esc(idLabel(key))} ${esc(a.location_verdict)}<small>${top ? esc(top.name) + ", " : ""}반경 ${a.position.error_radius_m}m</small>`,
     { className: "callout", direction: "top", offset: [0, -10] });
   if (ex && ex.drone) {
     const d = [ex.drone.lat, ex.drone.lon];
@@ -413,14 +488,19 @@ function removeAlert(key) {
 }
 
 /* ---------- 왼쪽 ---------- */
+/* 설명을 기다린 시간. 10분이 넘으면(지난 결과를 다시 볼 때) 세지 않는다 */
+const STALE_S = 600;
+const waitedS = a => Math.max(0, (Date.now() - new Date(a.time).getTime()) / 1000);
+/* 요약 한 줄: 용도, 반경, 반경 안 건물. 연기색은 VLM 이 늘 같은 답만 해서 쓰지 않는다(docs/vlm_compare.md) */
 function summary(a) {
   if (!a.description) {
-    const waited = Math.max(0, (Date.now() - new Date(a.time).getTime()) / 1000);
-    return `설명 생성 중 · ${waited.toFixed(0)}초 경과`;
+    const w = waitedS(a);
+    return w > STALE_S ? "설명 없음" : `설명 생성 중 (${w.toFixed(0)}초)`;
   }
-  const top = (a.land_use || [])[0], ob = a.observed || {};
-  const smoke = ob.smoke_present === false ? "연기 안 보임" : (ob.smoke_color ? ob.smoke_color + " 연기" : "연기");
-  return `${esc(shortLU(top && top.name))} · ${esc(smoke)} · 반경 ${a.position.error_radius_m}m`;
+  const top = (a.land_use || [])[0], b = (a.evidence || {}).buildings_in_radius;
+  const bld = b == null ? "" : b ? `, 건물 ${b}개` : ", 건물 없음";
+  const lu = a.location_verdict === "미확정" ? "용도 판단 보류" : shortLU(top && top.name);
+  return `${esc(lu)}, 반경 ${a.position.error_radius_m}m${bld}`;
 }
 function updBadge(id) { const n = (state.hist[id] || []).length - 1; return n > 0 ? `<span class="upd" title="같은 알람이 ${n}번 갱신됨">갱신 ${n}</span>` : ""; }
 function histRow(id) {
@@ -434,9 +514,9 @@ function item(a, fresh) {
   const sel = a.alert_id === state.selected, c = COLOR[a.location_verdict] || COLOR["미확정"];
   return `<button type="button" class="item ${sel ? "sel" : ""} ${fresh ? "fresh" : ""}" style="--vc:${c}" data-id="${esc(a.alert_id)}" aria-current="${sel}">
     <span class="t num">${hms(a.time)}</span><span class="rail"></span>
-    <span class="c"><span class="h"><span class="id num">${esc(a.alert_id)}</span>${vchip(a.location_verdict)}${updBadge(a.alert_id)}</span>
+    <span class="c"><span class="h"><span class="id" title="${esc(a.alert_id)}">${esc(idLabel(a.alert_id))}</span>${vchip(a.location_verdict)}${updBadge(a.alert_id)}<span class="push">${riskChip(riskOf(a))}</span></span>
       <span class="s">${summary(a)}</span>
-      <span class="row">${riskChip(riskOf(a))}${vlmChip(a)}</span></span>
+      ${vlmOf(a) === "fail" ? `<span class="row">${vlmChip(a)}</span>` : ""}</span>
   </button>`;
 }
 
@@ -446,30 +526,32 @@ function sheet(a, ex) {
   const v = a.location_verdict, lat = a.latency_ms || {}, ev = a.evidence || {}, lu = a.land_use || [], r = riskOf(a), vlm = vlmOf(a);
   const d = ex && ex.drone, b = ex && ex.box;
   const rd = state.report ? Math.round(distM([state.report.lat, state.report.lon], [a.position.lat, a.position.lon])) : null;
+  const took = a.description ? lat.alert_to_description : lat.detect_to_alert;
   const meta = [hms(a.time), d && d.alt != null ? `드론 ${d.alt}m` : "", d && d.heading != null ? `기수 ${d.heading}°` : "",
-                rd != null ? `신고 지점에서 ${rd}m` : ""].filter(Boolean).join(" · ");
+                rd != null ? `신고 지점에서 ${rd}m` : "",
+                took != null ? `${a.description ? "설명" : "알람"}까지 ${secN(took)}초` : ""].filter(Boolean).map(x => `<span>${x}</span>`).join("");
   const shot = ex && ex.image
     ? `<div class="shot ${vlm === "fail" ? "dim" : ""}" ${b ? `style="aspect-ratio:${b.aspect.toFixed(3)}"` : ""}><img src="${ex.image}" alt="${esc(a.detection_id)} 탐지 프레임">
         ${b ? `<span class="box" style="left:${b.left * 100}%;top:${b.top * 100}%;width:${b.width * 100}%;height:${b.height * 100}%"></span>
                <span class="score num" style="${b.left > .7 ? `right:${(1 - b.left - b.width) * 100}%` : `left:${b.left * 100}%`};top:${b.top * 100}%">연기 ${(+b.score).toFixed(2)}</span>` : ""}</div>`
     : `<div class="shot"><span class="noimg">사진 없음</span></div>`;
-  const body = a.description ? `<p class="desc">${esc(a.description)}</p>`
-    : `<div class="pending"><span>설명 생성 중 · <span class="num">${Math.max(0, (Date.now() - new Date(a.time).getTime()) / 1000).toFixed(0)}초</span> 경과</span><span class="shimmer"></span><span class="shimmer" style="width:70%"></span></div>`;
+  const body = a.description ? `<p class="desc"><b class="lab">설명</b>${esc(descView(a.description))}</p>`
+    : waitedS(a) > STALE_S ? `<div class="pending"><span>설명이 붙지 않은 알람입니다</span></div>`
+    : `<div class="pending"><span>설명 생성 중 (<span class="num">${waitedS(a).toFixed(0)}초</span>)</span><span class="shimmer"></span><span class="shimmer" style="width:70%"></span></div>`;
   const m = (label, val, unit) => `<div><span>${label}</span><b class="num">${val ?? "–"}${val != null && unit ? `<small>${unit}</small>` : ""}</b></div>`;
   const rule = a.verdict_rule || {};
   const luTxt = lu[0] ? `${esc(lu[0].name)} ${(lu[0].ratio * 100).toFixed(0)}%` : "용도 정보 없음";
   sheetEl.hidden = false;
-  sheetEl.style.setProperty("--vc", r.level === "확인 필요" ? "#8A8A87" : COLOR["확정"]);
+  sheetEl.style.setProperty("--vc", r.level === "높음" ? RISK_RED : r.level === "보통" ? RISK_AMBER : "#8A8A87");
   sheetEl.innerHTML = `${shot}
     <div class="info">
-      <div class="h"><span class="id num">${esc(a.alert_id)}</span>${vchip(v)}${riskChip(r)}${vlmChip(a)}<span class="meta">${meta}</span></div>
+      <div class="h"><span class="id" title="${esc(a.alert_id)}">${esc(idLabel(a.alert_id))}</span>${vchip(v)}${riskChip(r)}${vlmChip(a)}<span class="meta">${meta}</span></div>
       ${histRow(a.alert_id)}
-      <div class="why"><b>근거</b>${esc(r.reason)}${r.tmp ? ` <span class="tmp">(임시 규칙)</span>` : ""}</div>
+      <div class="why"><b>위험도 근거</b>${esc(r.reason)}</div>
       ${body}
-      <div class="metrics">${m("오차 반경", a.position.error_radius_m, "m")}${m("반경 안 건물", ev.buildings_in_radius, "개")}
-        ${m("주변 경사", ev.terrain_slope_deg, "°")}${m(a.description ? "설명까지" : "알람까지", secN(a.description ? lat.alert_to_description : lat.detect_to_alert), "초")}</div>
+      <div class="metrics">${m("오차 반경", a.position.error_radius_m, "m")}${m("반경 안 건물", ev.buildings_in_radius, "개")}${m("가장 가까운 건물", ev.nearest_building_m == null ? null : Math.round(ev.nearest_building_m), "m")}${m("주변 경사", ev.terrain_slope_deg, "°")}</div>
       <div class="lurow"><div class="stack">${lu.slice(0, 4).map(u => `<span style="width:${(u.ratio * 100).toFixed(1)}%;background:${luColor(u.name)}"></span>`).join("")}</div>
-        <span>${luTxt}${rule.rule ? ` · 기준 ${rule.threshold} 이상` : ""}</span></div>
+        <span>${luTxt}${rule.rule ? `, 판정 기준 ${rule.threshold} 이상` : ""}</span></div>
     </div>`;
   placeBottomControls();
 }
@@ -489,25 +571,29 @@ function render(freshIds = new Set()) {
   alerts.forEach(a => cnt[a.location_verdict] = (cnt[a.location_verdict] || 0) + 1);
   const vs = alerts.map(vlmOf), pass = vs.filter(x => x === "pass").length, fail = vs.filter(x => x === "fail").length, wait = vs.filter(x => x === "wait").length;
 
-  document.getElementById("hero").innerHTML = `<span class="big num">${cnt["확정"]}</span>
-    <div><b>확정 알람</b><span>영상 검증 통과 ${pass} · 헛탐지 의심 ${fail}${wait ? ` · 검증 중 ${wait}` : ""}</span></div>`;
+  const risks = alerts.map(riskOf), rc = lv => risks.filter(r => r.level === lv).length;
+  const worst = rc("높음") ? "높음" : rc("보통") ? "보통" : rc("확인 필요") ? "확인 필요" : null;
+  document.getElementById("hero").innerHTML = `<b>알람 ${alerts.length}개</b><span>위험 높음 ${rc("높음")}</span><span>확인 필요 ${rc("확인 필요")}</span>${fail ? `<span>헛탐지 의심 ${fail}</span>` : ""}`;
 
-  const total = alerts.length;
-  document.getElementById("stats").innerHTML = VERDICTS.map(k => {
-    const on = total ? Math.max(cnt[k] ? 1 : 0, Math.round(cnt[k] / total * 6)) : 0;
-    return `<button type="button" class="stat" data-f="${k}" aria-pressed="${state.filter === k}" title="${k}만 보기 (한 번 더 누르면 전체)">
-      <span class="lab"><i style="background:${COLOR[k]}"></i>${k}</span><span class="n num ${cnt[k] ? "" : "zero"}">${cnt[k]}</span>
-      <span class="dots">${Array.from({ length: 6 }, (_, i) => `<i ${i < on ? `style="background:${COLOR[k]}"` : ""}></i>`).join("")}</span></button>`;
-  }).join("");
+  document.getElementById("stats").innerHTML = VERDICTS.map(k =>
+    `<button type="button" class="stat" data-f="${k}" style="--c:${COLOR[k]}" aria-pressed="${state.filter === k}" title="${k}만 보기 (한 번 더 누르면 전체)">
+      <span class="lab"><i style="background:${COLOR[k]}"></i>${k}</span><span class="n num ${cnt[k] ? "" : "zero"}">${cnt[k]}</span></button>`
+  ).join("");
   document.querySelectorAll(".stat").forEach(b => b.addEventListener("click", () => {
     state.filter = state.filter === b.dataset.f ? "전체" : b.dataset.f; state.sig = ""; render();
   }));
-  document.getElementById("tlnote").textContent = state.filter === "전체" ? "최신 순" : `${state.filter}만 · 최신 순`;
+  document.getElementById("tlnote").textContent = state.filter === "전체" ? "최신 순" : `${state.filter}만, 최신 순`;
 
   const det = median(alerts.map(a => a.latency_ms && a.latency_ms.detect));
   const gq = median(alerts.map(a => a.latency_ms && a.latency_ms.geo_query));
+  /* 처리 속도. 평소엔 회색 한 줄, 설명이 밀리거나 연기 찾기가 1초를 넘으면 주황 */
+  const s2 = v => v == null ? "–" : (v / 1000).toFixed(v < 1000 ? 2 : 1) + "초";
+  const slow = wait >= 3 || (det != null && det > 1000);
   document.getElementById("perf").innerHTML =
-    `<div>탐지<b class="num">${sec(det)}/장</b></div><div>지리 조회<b class="num">${sec(gq)}</b></div><div>VLM 대기열<b class="num">${wait}</b></div>`;
+    `<span class="st ${slow ? "warn" : ""}"><i></i>${slow ? (wait >= 3 ? "설명 밀림" : "느려짐") : "정상"}</span>` +
+    `<span title="사진 한 장에서 연기를 찾는 데 걸린 시간">연기 찾기 <b class="num">${s2(det)}</b></span>` +
+    `<span title="지도에서 용도지역과 건물을 찾는 데 걸린 시간">위치 계산 <b class="num">${s2(gq)}</b></span>` +
+    `<span title="설명 문장을 아직 만들지 못한 알람 수">설명 대기 <b class="num">${wait}건</b></span>`;
 
   const ids = new Set(alerts.map(a => a.alert_id));
   Object.keys(layers).forEach(k => { if (!ids.has(k)) removeAlert(k); });
@@ -533,7 +619,7 @@ async function poll() {
   try { st = await (await fetch("/api/alerts")).json(); }
   catch { live.classList.add("off"); txt.textContent = "서버에 연결할 수 없음"; return; }
   live.classList.remove("off");
-  txt.innerHTML = `실시간 · <span class="num">${hms(Date.now())}</span>`;
+  txt.innerHTML = `실시간 <span class="num">${hms(Date.now())}</span>`;
 
   state.alerts = st.alerts; state.extra = st.extra;
   const updated = mergeHistory(st.alerts, st.history);
@@ -552,7 +638,7 @@ async function poll() {
     const pts = st.alerts.map(a => [a.position.lat, a.position.lon]);
     Object.values(st.extra).forEach(e => e.drone && pts.push([e.drone.lat, e.drone.lon]));
     if (state.report) pts.push([state.report.lat, state.report.lon]);
-    map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 120], paddingBottomRight: [80, sheetPad()], maxZoom: 17 });
+    map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 120], paddingBottomRight: [sheetPadRight(), sheetPad()], maxZoom: 17 });
   } else if ((fresh.size || updated.has(state.selected)) && following()) {
     const a = st.alerts.find(x => x.alert_id === state.selected);
     if (a) focusOn([[a.position.lat, a.position.lon]], Math.max(map.getZoom(), 16));

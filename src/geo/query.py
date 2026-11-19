@@ -28,6 +28,7 @@ from dem import Dem  # noqa: E402
 
 N_POINTS = 2000          # 오차 원 안 조회 지점 수(대략)
 NEAR_BUILDING_M = 15.0   # 건물 근접 판단 거리 (7주차 굴뚝 판정과 같음)
+NEAREST_SEARCH_M = 300.0  # 가장 가까운 건물을 찾는 최소 거리. 반경이 더 크면 반경까지 찾는다
 
 
 # ---------- 좌표 변환: 위도·경도 → EPSG:5179 ----------
@@ -220,11 +221,16 @@ def query(geo, lat, lon, radius_m, n_points=N_POINTS):
     land_use = [{"name": k, "ratio": round(v / hit, 4)}
                 for k, v in sorted(counts.items(), key=lambda kv: -kv[1])] if hit else []
 
-    evidence = {"buildings_in_radius": None, "terrain_slope_deg": None, "dem_resolution_m": None}
+    evidence = {"buildings_in_radius": None, "nearest_building_m": None,
+                "terrain_slope_deg": None, "dem_resolution_m": None}
     info = {"n_points": len(pts), "landuse_coverage": round(hit / len(pts), 4)}
 
     if geo.buildings:
         evidence["buildings_in_radius"] = len(geo.buildings_near(cx, cy, radius_m))
+        # 추정 위치(원 중심)에서 가장 가까운 건물 외곽까지 거리. 찾는 거리 안에 없으면 null (11/19 회의)
+        far = max(radius_m, NEAREST_SEARCH_M)
+        dists = [_dist_to_poly(cx, cy, r) for r in geo.buildings_near(cx, cy, far)]
+        evidence["nearest_building_m"] = round(min(dists), 1) if dists else None
         near_cands = [(r, _bbox(r)) for r in geo.buildings_near(cx, cy, radius_m + NEAR_BUILDING_M)]
         d = NEAR_BUILDING_M
         near = sum(1 for x, y in pts

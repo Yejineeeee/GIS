@@ -112,7 +112,7 @@ def _near(observed, alert, rich=False):
         text = f"반경 안 건물은 {n}개"
         d = ev.get("nearest_building_m")          # 지리 조회가 이 값을 내면 쓴다
         if d is not None:
-            text += f", 가장 가까운 건물까지 약 {round(d)}미터"
+            text += (", 추정 위치가 건물과 겹친다" if d < 1 else f", 가장 가까운 건물까지 약 {round(d)}미터")
         return f"{text}, {tail}" if tail else text + "다"
     if n == 0:
         return f"반경 안에 건물이 없고 {tail}" if tail else "반경 안에 건물이 없다"

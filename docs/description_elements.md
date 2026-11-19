@@ -78,7 +78,7 @@ python tools/element_coverage.py --observed results/eval_method_iii_v2.jsonl --o
 | 연기가 탐지되었다(영상 검증 통과) | `verifier.passed` | 알람 (`run.py`, `alert.py`, `docs/schema.md`) |
 | 가장 가까운 건물까지 약 40미터 | `evidence.nearest_building_m` | 지리 조회 (`src/geo/query.py`) |
 
-칸 이름은 제안이다. 담당자와 정한 이름으로 바꾼다.
+두 칸 모두 알람 v0.4(11/19)에 들어갔다. 파이프라인이 채우므로 위 구절이 실제 알람 문장에 나온다.
 
 넣지 않은 것: 주거 건물 수(건물 자료에 용도 정보가 없다), 굴뚝으로 보임(공장 지대 밖에서
 15장 중 1장만 맞다), 판정이 바뀐 이력(알람에 이전 값이 없다).

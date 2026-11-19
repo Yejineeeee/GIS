@@ -11,7 +11,8 @@ VLM 에게 위험도를 묻지 않는다. VLM 이 본 것(굴뚝으로 보임, �
 
     python src/vlm/risk.py          # 규칙표의 예를 돌려 확인
 
-아직 파이프라인에 연결하지 않았다. 알람에 넣으려면 alert.py 와 docs/schema.md 를 고쳐야 한다.
+파이프라인 연결(11/19): 알람을 낼 때마다 alert.py 의 Publisher 가 assess 를 불러 알람의 risk 칸
+({level, reason})에 넣는다. 대시보드와 설명 문장이 같은 값을 쓴다. 형식은 docs/schema.md v0.4.
 """
 
 LEVELS = ("높음", "보통", "낮음", "확인 필요")
@@ -53,12 +54,18 @@ def assess(alert, chimney=False, flame=None):
 
     chimney  2단계 답이 "굴뚝이나 공장 설비의 연기"인지 (docs/vlm_situation.md)
     flame    불꽃이 보이는지. None 이면 알람의 observed.flame_visible 을 쓴다
-    돌려주는 것: {"level", "reason", "rule"}  rule 은 맞은 줄 번호(1~6)
+    돌려주는 것: {"level", "reason", "rule"}  rule 은 맞은 줄 번호(0~6)
+
+    0번 줄(11/19 회의): 검증기가 탐지 조각에서 연기를 확인하지 못했으면(verifier.passed 가 false)
+    무엇보다 먼저 확인 필요다. 연기인지부터 불확실하면 위험도를 매길 수 없다.
     """
     if flame is None:
         flame = bool((alert.get("observed") or {}).get("flame_visible"))
     verdict = alert.get("location_verdict")
     buildings = _has_buildings(alert)
+
+    if (alert.get("verifier") or {}).get("passed") is False:
+        return {"level": "확인 필요", "rule": 0, "reason": "영상 검증에서 연기가 확인되지 않았다 (헛탐지 의심)"}
 
     # 불꽃이 보이면 굴뚝으로 보여도 낮추지 않는다. 건물 화재일 수 있다
     if chimney and buildings and not flame:
@@ -103,6 +110,8 @@ def _cases():
         ("확정, 산림만", assess(forest), "보통", 6),
         ("알람의 observed 에서 불꽃 읽기", assess(_alert("확정", ["산림"], flame=True)), "높음", 4),
         ("굴뚝으로 보이고 건물이 있어도 불꽃이 보이면 높음", assess(homes, chimney=True, flame=True), "높음", 4),
+        ("검증기 미통과면 주거지 인접·불꽃이어도 확인 필요", assess(dict(homes, verifier={"p_smoke": 0.2, "passed": False}), flame=True), "확인 필요", 0),
+        ("검증기 통과면 원래 규칙대로", assess(dict(homes, verifier={"p_smoke": 0.9, "passed": True})), "높음", 5),
     ]
     ok = True
     for name, got, level, rule in cases:

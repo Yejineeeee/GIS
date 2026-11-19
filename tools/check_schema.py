@@ -1,4 +1,4 @@
-"""입출력 JSON 형식 검사기 (docs/schema.md v0.3).
+"""입출력 JSON 형식 검사기 (docs/schema.md. 탐지 v0.3, 알람 v0.4).
 
 탐지 결과와 알람 JSON이 정해진 키, 타입, 값 목록을 지키는지 검사한다.
 파일 종류는 키로 자동 구분한다 (`detections`가 있으면 탐지, `alert_id`가 있으면 알람).
@@ -14,7 +14,8 @@ import glob
 import json
 import sys
 
-VERSION = "0.3"
+VERSION = "0.3"          # 탐지 결과 (바뀌지 않음)
+ALERT_VERSION = "0.4"    # 알람: risk, verifier, evidence.nearest_building_m (11/19 회의)
 NUM = (int, float)
 
 # 탐지 결과: (경로, 타입, 허용 값 목록 또는 None)
@@ -49,7 +50,7 @@ CAMERA = [
     ("source", str, ["실제", "가상"]),
 ]
 ALERT_TOP = [
-    ("schema_version", str, [VERSION]),
+    ("schema_version", str, [ALERT_VERSION]),
     ("alert_id", str, None),
     ("time", str, None),
     ("detection_id", str, None),
@@ -58,6 +59,8 @@ ALERT_TOP = [
     ("land_use", list, None),
     ("verdict_rule", dict, None),
     ("evidence", (dict, type(None)), None),
+    ("risk", (dict, type(None)), None),
+    ("verifier", (dict, type(None)), None),
     ("observed", (dict, type(None)), None),
     ("description", (str, type(None)), None),
     ("description_method", (str, type(None)), ["프롬프트", "검증재생성", "구조화템플릿", None]),
@@ -69,6 +72,20 @@ OBSERVED = [
     ("spread", str, ["좁음", "보통", "넓음", "없음"]),
     ("flame_visible", bool, None),
     ("terrain", str, ["산림", "농경지", "주거지", "도로", "물", "기타"]),
+]
+RISK = [
+    ("level", str, ["높음", "보통", "낮음", "확인 필요"]),
+    ("reason", str, None),
+]
+VERIFIER = [
+    ("p_smoke", NUM, None),
+    ("passed", bool, None),
+]
+EVIDENCE = [
+    ("buildings_in_radius", (int, type(None)), None),
+    ("nearest_building_m", (int, float, type(None)), None),
+    ("terrain_slope_deg", (int, float, type(None)), None),
+    ("dem_resolution_m", (int, float, type(None)), None),
 ]
 LATENCY = ["detect", "geo_transform", "geo_query", "verdict", "vlm",
            "detect_to_alert", "alert_to_description"]
@@ -102,6 +119,9 @@ for path in paths:
         jobs = [("", d, ALERT_TOP)]
         if isinstance(d.get("observed"), dict):
             jobs.append(("observed.", d["observed"], OBSERVED))
+        for key, rules in (("risk", RISK), ("verifier", VERIFIER), ("evidence", EVIDENCE)):
+            if isinstance(d.get(key), dict):
+                jobs.append((f"{key}.", d[key], rules))
     else:
         print(f"[FAIL] {path}\n  - 탐지(detections)인지 알람(alert_id)인지 알 수 없다")
         bad_files += 1
@@ -176,6 +196,9 @@ for path in paths:
             errs.append("구조화템플릿인데 observed가 없음")
         if d.get("description") is not None and d.get("description_method") is None:
             errs.append("description이 있는데 description_method가 null")
+        vf = d.get("verifier")
+        if isinstance(vf, dict) and isinstance(vf.get("p_smoke"), NUM) and not 0 <= vf["p_smoke"] <= 1:
+            errs.append("verifier.p_smoke: 0~1 범위 밖")
         lat = d.get("latency_ms") or {}
         for k in LATENCY:
             if k not in lat:

@@ -339,14 +339,22 @@ python tools/make_demo_video.py results/pipeline_scenario results/demo_scenario 
 
 ```
 python tools/sim_server.py sim 8800 results/live           # 세 번째 인자: 알람을 읽을 폴더 (GET /latest)
-python tools/live_estimate.py sim/frames_live results/live --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json
+python src/pipeline/run.py --watch --frames sim/frames_live --weights best.pt --geo-dir data/geo_jagok \
+    --sim-terrain sim/terrain_jagok3d.json --vlm fake --out results/live        # 5.6 지켜보기 모드
 python src/dashboard/server.py --out results/live --frames sim/frames_live --geo-dir data/geo_jagok --port 8820 --report 37.468913 127.10057
 ```
+
+세 창을 켠 뒤 브라우저 콘솔에서 `vwPursue` 를 부른다. 파이프라인은 `sim/frames_live/` 에 새 장이 생기면
+바로 처리해 `results/live/alerts/` 에 알람을 쓰고, 드론은 `/latest` 로 그 추정 위치를 읽어 다가간다.
+켤 때 폴더에 이미 있던 장은 건너뛴다. 끝낼 때는 Ctrl+C 또는 `sim/frames_live/STOP` 파일, 또는 `--idle-sec 10`.
 
 ```
 await vwPrepare({ lat: 37.468027, lon: 127.102969 })
 await vwPursue({ center: { lat: 37.468913, lon: 127.10057 }, site: "live" })   // 멈추기: window.__pursueStop = true
 ```
+
+**5.6 (11/19)**: `run.py --watch` 가 들어와 위 명령은 파이프라인 전체(검증기, 설명, 위험도, 알람 갱신)로 돈다.
+`docs/pipeline.md` "시뮬레이터와 실시간 연결". 아래 `tools/live_estimate.py` 는 그 전에 쓰던 시험용이다.
 
 `tools/live_estimate.py` 는 파이프라인의 프레임 폴더 지켜보기 모드(5.6)가 생기기 전까지 쓰는
 시험용이다. run.py 와 같은 함수로 장마다 위치와 판정을 내 `alerts/a-0001.json` 하나를 덮어쓰고,

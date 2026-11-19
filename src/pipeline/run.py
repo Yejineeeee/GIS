@@ -20,15 +20,27 @@
     # 대시보드(5.5)를 같이 켜 두면 알람이 지도에 바로 뜬다
     python src/dashboard/server.py --out results/pipeline
 
+    # 방법 3) 시뮬레이터와 실시간 연결 (WBS 5.6, docs/simulator.md "실시간 연결")
+    #   시뮬레이터(tools/sim_server.py)가 찍는 프레임 폴더를 지켜보다가 새 장이 오면 바로 처리한다.
+    #   알람 폴더를 sim_server.py 세 번째 인자로 주면 드론(vwPursue)이 최신 추정 위치를 따라간다
+    python tools/sim_server.py sim 8800 results/live
+    python src/pipeline/run.py --watch --frames sim/frames_live --weights best.pt \
+        --geo-dir data/geo_jagok --sim-terrain sim/terrain_jagok3d.json --vlm fake --out results/live
+    python src/dashboard/server.py --out results/live --frames sim/frames_live --report 37.468913 127.10057 --port 8820
+
 입력
     --weights     분할 모델 가중치. 주면 --frames 의 사진을 직접 탐지한다(detect.py).
                   사진 옆에 같은 이름의 JSON(시뮬레이터 프레임)이 있으면 그 카메라 값을 쓰고,
                   truth(정답 좌표)가 있으면 알람 위치가 정답에서 몇 m 떨어졌는지 함께 낸다
     --detections  탐지 결과 JSON 폴더 (docs/schema.md 탐지 형식). --weights 대신 쓴다
     --frames      사진 폴더
+    --watch       --frames 폴더를 지켜보며 새로 생기는 사진을 차례로 처리한다 (5.6). 사진 옆 JSON 이
+                  다 써진 뒤에 읽는다. 켤 때 이미 있던 사진은 건너뛴다(--watch-all 이면 처음부터).
+                  첫 장이 온 뒤 --idle-sec 동안 새 사진이 없거나 Ctrl+C, 또는 폴더에 STOP 파일이 생기면 끝낸다
     --geo-dir     landuse_5179.geojson, buildings_5179.geojson, *.img(DEM) 가 있는 폴더
                   (따로 줄 때는 --landuse, --buildings, --dem)
-    --vlm         none(설명 없음) / fake(고정값, 연결 확인용) / qwen(실제 모델)
+    --vlm         none(설명 없음) / fake(고정값, 연결 확인용) / qwen(실제 모델, transformers)
+                  / gguf(llama-server 에 올린 GGUF 모델, --vlm-url. 현장 기기 CPU 구성)
     --no-verify   후보 검증기를 끈다 (아래)
 
 출력 (--out, 기본 results/pipeline)
@@ -147,6 +159,59 @@ def find_image(frame, frames_dir):
     return None
 
 
+def watch_source(detector, folder, include_existing=False, idle_sec=0.0, arrival=None, poll=0.2):
+    """프레임 폴더 지켜보기 (WBS 5.6). (만들기 함수, 표시 문구)를 돌려준다.
+
+    시뮬레이터(tools/sim_server.py)는 사진(sim_NNNN.png)을 쓴 다음 옆에 JSON 을 쓴다. JSON 이 생기고
+    끝까지 읽혀야(다 써져야) 그 장을 처리한다. 번호 순서대로 한 장씩 처리하며, 처리하는 동안 쌓인
+    장도 건너뛰지 않는다. arrival 에 사진이 생긴 시각을 적어 지연을 잰다.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    stop = folder / "STOP"
+    seen = set() if include_existing else {p.stem for p in folder.glob("*.png")}
+    if stop.exists():
+        stop.unlink()
+
+    def ready(png):
+        side = png.with_suffix(".json")
+        if not side.is_file():
+            return False
+        try:
+            json.load(open(side, encoding="utf-8"))      # 쓰는 중이면 실패한다. 다음 번에 다시 본다
+            return True
+        except (ValueError, OSError):
+            return False
+
+    def gen():
+        idle_from = None                 # 첫 장이 온 뒤부터 잰다 (시뮬레이터 준비에 시간이 걸린다)
+        i = len(seen)
+        print(f"[지켜보기] {folder} 에 새 사진이 오기를 기다린다"
+              + (f" (이미 있던 {len(seen)}장은 건너뜀)" if seen else "")
+              + (f", 첫 장 뒤 {idle_sec:g}초 동안 없으면 끝냄" if idle_sec else ", 끝내려면 Ctrl+C 또는 STOP 파일"))
+        while True:
+            new = sorted(p for p in folder.glob("*.png") if p.stem not in seen)
+            new = [p for p in new if ready(p)]
+            if new:
+                for png in new:
+                    seen.add(png.stem)
+                    if arrival is not None:
+                        arrival[png.stem] = png.stat().st_mtime
+                    frame, truth = detector.run(png, i)
+                    i += 1
+                    yield frame, truth, png.stem
+                idle_from = time.monotonic()
+                continue
+            if stop.exists():
+                print("[지켜보기] STOP 파일을 보고 끝낸다")
+                return
+            if idle_sec and idle_from is not None and time.monotonic() - idle_from > idle_sec:
+                print(f"[지켜보기] {idle_sec:g}초 동안 새 사진이 없어 끝낸다")
+                return
+            time.sleep(poll)
+
+    return gen, f"지켜보기({folder})"
+
+
 def main():
     ap = argparse.ArgumentParser(description="전체 파이프라인 (WBS 5.2, 5.4)")
     ap.add_argument("--detections", help="탐지 결과 JSON 폴더 (--weights 대신)")
@@ -156,15 +221,22 @@ def main():
     ap.add_argument("--landuse", help="landuse_5179.geojson (기본: geo-dir 안)")
     ap.add_argument("--buildings", help="buildings_5179.geojson (기본: geo-dir 안, 없으면 건너뜀)")
     ap.add_argument("--dem", nargs="*", help="DEM IMG 파일들 (기본: geo-dir 안 *.img)")
-    ap.add_argument("--vlm", default="none", choices=["none", "fake", "qwen"])
+    ap.add_argument("--vlm", default="none", choices=["none", "fake", "qwen", "gguf"])
+    ap.add_argument("--vlm-url", default="http://127.0.0.1:8099", help="gguf 모드의 llama-server 주소")
+    ap.add_argument("--vlm-crop-px", type=int, default=360,
+                    help="설명에 넣는 탐지 조각의 긴 변(px). 0 이면 사진 전체 (11/19 회의, docs/inputs_cpu.md)")
     ap.add_argument("--fake-sec", type=float, default=0.0,
                     help="fake VLM이 걸리는 시간(초). 분리 출력을 시험할 때 (예: 5)")
     ap.add_argument("--sync", action="store_true", help="설명을 기다렸다가 다음 프레임 (5.2 방식)")
     ap.add_argument("--interval", type=float, default=0.0,
                     help="프레임 사이 대기(초). 실제 속도처럼 보려면 1~2")
+    ap.add_argument("--watch", action="store_true", help="--frames 폴더를 지켜보며 새 사진을 바로 처리 (5.6)")
+    ap.add_argument("--watch-all", action="store_true", help="--watch 를 켤 때 이미 있던 사진도 처리")
+    ap.add_argument("--idle-sec", type=float, default=0.0,
+                    help="--watch 에서 이 시간(초) 동안 새 사진이 없으면 끝낸다. 0 이면 Ctrl+C 까지")
     ap.add_argument("--no-merge", action="store_true", help="같은 사건 묶기를 끈다")
     ap.add_argument("--no-update", action="store_true",
-                    help=f"알람 갱신을 끈다 (기본: 같은 사건의 반경이 {int(UPDATE_RATIO * 100)}% 이하로 줄면 같은 알람을 고쳐 다시 냄)")
+                    help=f"알람 갱신을 끈다 (기본: 같은 사건의 반경이 {int(UPDATE_RATIO * 100)}%% 이하로 줄면 같은 알람을 고쳐 다시 냄)")
     ap.add_argument("--no-verify", action="store_true", help="후보 검증기를 끈다 (VLM 이 있을 때만 켜짐)")
     ap.add_argument("--no-occlusion", action="store_true", help="밑동 가림 판단(지형)을 끈다")
     ap.add_argument("--sim-terrain", help="DEM 대신 시뮬레이터 지형 격자(sim/terrain_*.json)를 쓴다. DEM 이 없는 지역용")
@@ -190,8 +262,10 @@ def main():
           f"건물 {len(geo.buildings) if buildings else '없음'}, DEM {len(dem) if dem else '없음'}")
 
     t = time.perf_counter()
-    vlm = VLM(a.vlm, fake_sec=a.fake_sec)
-    print(f"[준비] VLM {a.vlm}" + (f" ({vlm.device}) {ms(t)}ms" if a.vlm == "qwen" else "")
+    vlm = VLM(a.vlm, fake_sec=a.fake_sec, crop_px=a.vlm_crop_px, url=a.vlm_url)
+    print(f"[준비] VLM {a.vlm}" + (f" ({vlm.device}) {ms(t)}ms" if a.vlm in ("qwen", "gguf") else "")
+          + (f", 설명 입력 {'탐지 조각 긴 변 ' + str(a.vlm_crop_px) + 'px' if a.vlm_crop_px else '사진 전체'}"
+             if a.vlm != "none" else "")
           + (f", 설명 {'차례대로' if a.sync else '따로 도는 스레드에서'}" if a.vlm != "none" else ""))
     if a.vlm == "fake":
         print("[주의] VLM fake: 고정된 사실을 넣는다. 연결 확인용이며 결과로 쓰지 않는다")
@@ -199,6 +273,9 @@ def main():
     pub = Publisher(a.out)
     describer = Describer(vlm, pub, sync=a.sync) if a.vlm != "none" else None
 
+    arrival = {}         # 지켜보기: 사진 이름 -> 파일이 생긴 시각(에포크 초)
+    if a.watch and not a.weights:
+        sys.exit("--watch 는 --weights 와 --frames 가 필요하다")
     if a.weights:
         if not a.frames:
             sys.exit("--weights 를 쓰면 --frames 사진 폴더가 필요하다")
@@ -206,16 +283,19 @@ def main():
         t = time.perf_counter()
         detector = Detector(a.weights)
         print(f"[준비] 탐지 모델 {ms(t)}ms (imgsz {detector.imgsz}, conf {detector.conf})")
-        images = sorted(p for p in Path(a.frames).iterdir()
-                        if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
-        if not images:
-            sys.exit(f"사진이 없다: {a.frames}")
+        if a.watch:
+            source, n_frames = watch_source(detector, Path(a.frames), a.watch_all, a.idle_sec, arrival)
+        else:
+            images = sorted(p for p in Path(a.frames).iterdir()
+                            if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
+            if not images:
+                sys.exit(f"사진이 없다: {a.frames}")
 
-        def source():
-            for i, img in enumerate(images):
-                frame, truth = detector.run(img, i)
-                yield frame, truth, img.stem
-        n_frames = len(images)
+            def source():
+                for i, img in enumerate(images):
+                    frame, truth = detector.run(img, i)
+                    yield frame, truth, img.stem
+            n_frames = len(images)
     elif a.detections:
         frames = load_frames(a.detections)
         if not frames:
@@ -227,7 +307,7 @@ def main():
         n_frames = len(frames)
     else:
         sys.exit("--weights(+ --frames) 나 --detections 중 하나가 필요하다")
-    print(f"[시작] 프레임 {n_frames}개 → {a.out}\n")
+    print(f"[시작] 프레임 {n_frames}{'' if a.watch else '개'} → {a.out}\n")
 
     events = []          # 이미 낸 알람: [lat, lon, radius, alert_id]
     verify = a.vlm != "none" and not a.no_verify
@@ -235,11 +315,13 @@ def main():
         print(f"[준비] 후보 검증기 켬: 알람은 conf 1등으로 먼저 내고, P(예) {VERIFY_TAU} 이상인 "
               f"탐지로 위치를 고쳐 다시 낸다" + (" (차례대로)" if a.sync else " (따로 도는 스레드에서)"))
     stats = {"frames": 0, "detections": 0, "alerts": 0, "merged": 0, "fail": 0, "verify_skip": 0,
-             "relocated": 0, "verify_saved": 0, "occluded": 0, "updated": 0, "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "truth_err": {}}
+             "relocated": 0, "verify_saved": 0, "verify_stale": 0, "occluded": 0, "updated": 0, "verdict": {"확정": 0, "모호": 0, "미확정": 0}, "truth_err": {}}
     lock = threading.Lock()      # events, stats 를 검증 스레드와 같이 쓴다
     latest = {}                  # alert_id -> 마지막으로 낸 알람 (갱신할 때 고쳐 쓴다)
+    boxes = {}                   # detection_id -> bbox (설명에 넣을 탐지 조각)
     if describer:
-        describer.current = lambda aid: (latest.get(aid) or {}).get("detection_id")
+        describer.current = latest.get
+        describer.bbox_of = boxes.get
     t_run = time.perf_counter()
 
     def transform(frame, det):
@@ -316,6 +398,8 @@ def main():
             {"rule": RULE, "threshold": thr, "samples": qinfo["n_points"]}, evidence,
             {"detect": det_ms, "geo_transform": t_tr, "geo_query": t_q, "verdict": t_v,
              "detect_to_alert": det_ms + ms(t_frame)})
+        if det.get("_p_smoke") is not None:      # 검증기를 거친 탐지로 낸 알람 (다른 자리에서 통과한 연기)
+            alert["verifier"] = verifier_of(det)
         pub.send(alert)
         t_alert = time.perf_counter()
         with lock:
@@ -344,7 +428,7 @@ def main():
             alert.update({"time": now_iso(), "detection_id": det.get("id"), "position": position,
                           "location_verdict": verdict, "land_use": land_use, "evidence": evidence,
                           "verdict_rule": {"rule": RULE, "threshold": thr, "samples": qinfo["n_points"]},
-                          "observed": None, "description": None, "description_method": None})
+                          "verifier": None, "observed": None, "description": None, "description_method": None})
             alert["latency_ms"].update({"detect": det_ms, "geo_transform": t_tr, "geo_query": t_q, "verdict": t_v,
                                         "vlm": None, "detect_to_alert": det_ms + ms(t_frame),
                                         "alert_to_description": None})
@@ -360,6 +444,8 @@ def main():
                  score=det.get("score"))
         print(f"  {aid} 갱신 [{old_verdict}→{verdict}] {det.get('id')}  반경 {old_r}m → {position['error_radius_m']}m"
               + (f"  정답과 {err}m" if err is not None else ""))
+        if checker and image:           # 새 탐지도 검증기로 확인한다 (그동안 verifier 는 null = 검증 중)
+            checker.submit(("갱신", aid, det, image))
         if describer:                   # 위치와 판정이 바뀌었으니 설명도 새로 만든다
             describer.submit(snap, image, t_alert)
 
@@ -393,8 +479,33 @@ def main():
               f"반경 {position['error_radius_m']}m  알람 후 {ms(t_alert)}ms"
               + (f"  정답과 {err}m" if err is not None else ""))
 
+    def verifier_of(d):
+        return {"p_smoke": round(d["_p_smoke"], 4), "passed": d["_p_smoke"] >= VERIFY_TAU}
+
+    def check_update(aid, det, image):
+        """갱신된 알람의 새 탐지를 검증기로 확인해 verifier 를 채운다."""
+        with lock:     # 줄 서 있는 동안 또 갱신됐으면 묻지 않는다 (CPU 에서 한 번 12초, 7.3 실측)
+            cur = latest.get(aid)
+            if not cur or cur["detection_id"] != det.get("id"):
+                stats["verify_stale"] += 1
+                return
+        det["_p_smoke"], det["_p_ms"] = vlm.p_smoke(image, det["bbox"])
+        with lock:
+            cur = latest.get(aid)
+            if not cur or cur["detection_id"] != det.get("id"):    # 그 사이 또 갱신됐다
+                return
+            cur["verifier"] = verifier_of(det)
+            snap = json.loads(json.dumps(cur))
+        pub.send(snap)
+        pub.note(alert_id=aid, stage="갱신 검증", detection_id=det.get("id"), p_smoke=cur["verifier"]["p_smoke"],
+                 p_smoke_ms=det.get("_p_ms"))
+        if not cur["verifier"]["passed"]:
+            print(f"  {aid} 갱신 탐지 검증기 미통과 (P(예) {det['_p_smoke']:.2f}) → 위험도 확인 필요")
+
     def check(job):
         """후보 검증기 (4.7). 알람을 낸 뒤에 돈다."""
+        if job[0] == "갱신":
+            return check_update(*job[1:])
         frame, dets, top, first, image, stem, truth, t_frame, det_ms = job
         # 이미 낸 알람과 같은 사건으로 묶일 탐지는 알람을 바꾸지 못하므로 묻지 않는다.
         # 큰 연기를 여러 조각으로 쪼갠 것이 대부분 여기서 빠진다
@@ -429,8 +540,15 @@ def main():
         if first:
             alert, t_alert = first
             if passed and passed[0] is not top:          # conf 1등이 헛탐지로 걸러졌다
+                with lock:
+                    alert["verifier"] = verifier_of(passed[0])
                 relocate(alert, frame, passed[0], truth, t_alert)
                 rest = passed[1:]
+            else:                                        # 1등 그대로. 통과했든 못 했든 결과를 알람에 적는다
+                with lock:
+                    alert["verifier"] = verifier_of(top)
+                    snap = json.loads(json.dumps(alert))
+                pub.send(snap)
             if describer:
                 describer.submit(alert, image, t_alert)
         for d in rest:                                   # 다른 자리에서 통과한 연기
@@ -441,15 +559,27 @@ def main():
         describer.yield_to = checker.busy    # 같은 GPU 를 쓰므로 위치를 고치는 검증을 먼저 한다
 
     # ---------- 프레임마다 ----------
-    for frame, truth, stem in source():
+    frames_iter = source()
+    while True:
+        try:
+            frame, truth, stem = next(frames_iter)
+        except StopIteration:
+            break
+        except KeyboardInterrupt:
+            print("\n[멈춤] Ctrl+C. 남은 검증과 설명을 마무리한다")
+            break
         stats["frames"] += 1
         t_frame = time.perf_counter()
+        if stem in arrival:                  # 지켜보기: 사진이 생기고 처리를 시작하기까지
+            stats.setdefault("watch_lag", []).append(round((time.time() - arrival[stem]) * 1000))
         pub.frame(frame, stem)
         det_ms = (frame.get("latency_ms") or {}).get("detect") or 0
         if not frame.get("detections"):
             print(f"  프레임 {frame.get('frame_id')}: 탐지 없음 ({det_ms}ms)")
         dets = list(frame.get("detections") or [])
         stats["detections"] += len(dets)
+        for d in dets:
+            boxes[d.get("id")] = d.get("bbox")
         image = find_image(frame, a.frames) if dets else None
         if checker and dets and image:
             # 알람은 YOLO conf 1등으로 바로 내고, 검증기는 뒤에서 돌린다
@@ -460,7 +590,9 @@ def main():
             for det in dets:
                 new_alert(frame, det, stem, truth, t_frame, det_ms, image)
 
-        if a.interval > 0:
+        if stem in arrival:                  # 지켜보기: 사진이 생기고 이 장의 알람(검증·설명 제외)까지
+            stats.setdefault("watch_done", []).append(round((time.time() - arrival[stem]) * 1000))
+        if a.interval > 0 and not a.watch:
             time.sleep(a.interval)
 
     t_alerts_done = ms(t_run)
@@ -483,9 +615,13 @@ def main():
           f"(같은 사건으로 묶음 {stats['merged']}, 좌표 변환 실패 {stats['fail']}, "
           f"검증기 미통과 {stats['verify_skip']}, 검증기로 위치 수정 {stats['relocated']}, "
           f"밑동 가림으로 위치 수정 {stats['occluded']}, 알람 갱신 {stats['updated']}, "
-          f"묶여서 검증 생략 {stats['verify_saved']})")
+          f"묶여서 검증 생략 {stats['verify_saved']}, 또 갱신되어 검증 생략 {stats['verify_stale']})")
     print("  판정: " + ", ".join(f"{k} {v}" for k, v in stats["verdict"].items()))
     print(f"  마지막 알람까지 {t_alerts_done}ms, 설명까지 포함 {ms(t_run)}ms")
+    for key, label in (("watch_lag", "사진 생김 → 탐지 끝"), ("watch_done", "사진 생김 → 그 장의 알람까지")):
+        v = sorted(stats.get(key) or [])
+        if v:
+            print(f"  [지켜보기] {label}: 중앙값 {v[len(v) // 2]}ms (최대 {v[-1]}ms, {len(v)}장)")
     for k in ("geo_transform", "geo_query", "verdict", "detect_to_alert", "vlm", "alert_to_description"):
         vals = sorted(x["latency_ms"][k] for x in alerts if x["latency_ms"].get(k) is not None)
         if vals:
