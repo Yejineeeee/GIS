@@ -166,19 +166,20 @@ class Describer:
         if self._stale(alert):
             return
         bbox = self.bbox_of(alert["detection_id"]) if self.bbox_of else None
+        # 불꽃은 구조화 질문의 답을 쓰지 않고 같은 조각에 따로 묻는다 (docs/vlm_flame_obs.md).
+        # 검증기와 같은 조각이라, 설명보다 먼저 물어야 llama-server 가 방금 본 조각을 다시 쓴다
+        p_flame = flame_ms = None
+        if bbox and image_path and hasattr(self.vlm, "p_flame"):
+            p_flame, flame_ms = self.vlm.p_flame(str(image_path), bbox)
         observed, vlm_ms, raw = self.vlm.observe(str(image_path) if image_path else None, bbox)
         if observed is None:
             self.pub.note(alert_id=aid, stage="설명", error=f"스키마 실패: {raw[:200]}")
             print(f"     {aid} 설명 실패: VLM 출력이 스키마와 다름")
             return
-        # 불꽃은 구조화 질문의 답을 쓰지 않고 같은 조각에 따로 묻는다 (docs/vlm_flame_obs.md)
-        p_flame = None
-        if bbox and image_path and hasattr(self.vlm, "p_flame"):
+        if p_flame is not None:
             from vlm_client import FLAME_TAU
-            p_flame, flame_ms = self.vlm.p_flame(str(image_path), bbox)
-            if p_flame is not None:
-                observed["flame_visible"] = p_flame >= FLAME_TAU
-                vlm_ms = (vlm_ms or 0) + (flame_ms or 0)
+            observed["flame_visible"] = p_flame >= FLAME_TAU
+            vlm_ms = (vlm_ms or 0) + (flame_ms or 0)
         cur = self.current(aid) if self.current else None
         if cur is not None:            # 설명을 기다리는 동안 검증기가 낸 결과를 문장과 알람에 반영한다
             alert["verifier"] = copy.deepcopy(cur.get("verifier"))
@@ -199,7 +200,7 @@ class Describer:
             cur["latency_ms"]["alert_to_description"] = alert["latency_ms"]["alert_to_description"]
         bad = verify.check(desc, alert, observed)
         self.pub.note(alert_id=aid, stage="설명", violations=bad, raw=raw,
-                      p_flame=None if p_flame is None else round(p_flame, 3))
+                      p_flame=None if p_flame is None else round(p_flame, 3), flame_ms=flame_ms)
         self.done.append((aid, alert["latency_ms"]["alert_to_description"], desc))
         print(f"     {aid} 설명 (알람 후 {alert['latency_ms']['alert_to_description']}ms): {desc}")
         if not observed.get("smoke_present"):

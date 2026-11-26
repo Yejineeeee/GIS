@@ -63,6 +63,9 @@ VERIFY_PX = 448
 # 했지만, 같은 조각에 이 질문만 하면 AUC 0.86 이었다(docs/vlm_compare.md). 문턱은 검증기와 같은 0.7
 FLAME_PROMPT = "이 사진에 불꽃이 보이는가. 예 또는 아니오로만 답하라."
 FLAME_TAU = 0.7
+# gguf(Q4_K_M, CPU 현장 하한 구성)는 확률이 전체로 높게 나와 문턱 0.7 에서 헛말이 38장 중 12장이고,
+# 캐시가 맞지 않으면 질문 한 번에 16초가 더 든다. 그래서 qwen(nf4, 소형 GPU 기기)에서만 묻는다
+FLAME_MODES = ("qwen", "fake")
 DESC_MIN_SIDE = 96       # 설명 조각이 너무 작으면 모델이 아무것도 못 본다 (tools/prep_crops.py 와 같음)
 
 
@@ -198,7 +201,10 @@ class VLM:
         return self.p_yes(image_path, bbox, VERIFY_PROMPT)
 
     def p_flame(self, image_path, bbox):
-        """같은 조각에 불꽃이 보이는지 따로 묻는다. (확률, 걸린 ms). fake 는 0.0"""
+        """같은 조각에 불꽃이 보이는지 따로 묻는다. (확률, 걸린 ms). fake 는 0.0.
+        FLAME_MODES 밖(gguf, none)이면 묻지 않고 (None, None) 을 돌려준다."""
+        if self.mode not in FLAME_MODES:
+            return None, None
         if self.mode == "fake":
             return 0.0, 0
         return self.p_yes(image_path, bbox, FLAME_PROMPT)

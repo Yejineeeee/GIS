@@ -7,6 +7,11 @@ tools/flame_eval.py 는 연기 라벨을 감싼 박스로 조각을 만들었다
 문턱은 미리 정한 0.7(FLAME_TAU, 검증기와 같은 값)로 보고, 다른 문턱은 참고로만 적는다.
 
     python tools/flame_detcrop.py <yolo_1260 폴더> <yolo_1260_raw_labels 폴더> <탐지 가중치> --out runs/flame_detcrop.jsonl
+
+현장 구성(llama-server, Qwen2.5-VL-3B Q4_K_M)으로 같은 조각을 다시 물을 때는 앞 결과의 박스를 그대로 쓴다.
+사진마다 이미지가 달라 프롬프트 캐시는 맞지 않는다(정확도만 본다).
+
+    python tools/flame_detcrop.py <yolo_1260> <raw_labels> - --vlm gguf --boxes runs/flame_detcrop.jsonl --out runs/flame_detcrop_gguf.jsonl
 """
 import argparse
 import json
@@ -18,7 +23,7 @@ sys.path.insert(0, str(ROOT / "src" / "pipeline"))
 sys.path.insert(0, str(ROOT / "tools"))
 
 from flame_eval import load, pick, auc, inside  # noqa: E402
-from vlm_client import VLM, FLAME_TAU  # noqa: E402
+from vlm_client import VLM, FLAME_TAU, FLAME_PROMPT  # noqa: E402
 from detect import Detector  # noqa: E402
 
 VERIFY_TAU = 0.7
@@ -30,13 +35,27 @@ def main():
     ap.add_argument("raw_labels")
     ap.add_argument("weights")
     ap.add_argument("--out", default=str(ROOT / "runs" / "flame_detcrop.jsonl"))
+    ap.add_argument("--vlm", default="qwen", choices=["qwen", "gguf"])
+    ap.add_argument("--vlm-url", default="http://127.0.0.1:8099")
+    ap.add_argument("--boxes", help="앞 결과 jsonl. 주면 탐지와 검증을 다시 하지 않고 그 박스에 불꽃만 묻는다")
     a = ap.parse_args()
 
     pos, neg = pick(load(a.raw_labels))
     print(f"불꽃 있음 {len(pos)}장, 없음 {len(neg)}장", flush=True)
-    det = Detector(a.weights)
-    vlm = VLM("qwen")
+    vlm = VLM(a.vlm, url=a.vlm_url)
     out = []
+    if a.boxes:
+        prev = [json.loads(l) for l in open(a.boxes, encoding="utf-8")]
+        for r in prev:
+            path = Path(a.images) / "images" / r["split"] / (r["name"] + ".jpg")
+            if r.get("det_bbox"):
+                # 파이프라인은 gguf 에서 불꽃을 묻지 않으므로(FLAME_MODES), 잴 때는 같은 질문을 직접 한다
+                r["p_flame"], r["flame_ms"] = vlm.p_yes(str(path), r["det_bbox"], FLAME_PROMPT)
+                print(f"  {'불꽃' if r['flame'] else '    '} 조각 {r['p_flame']:.2f}  {r['flame_ms']}ms", flush=True)
+            out.append(r)
+        pos, neg = [], []
+    else:
+        det = Detector(a.weights)
     for r in pos + neg:
         path = Path(a.images) / "images" / r["split"] / (r["name"] + ".jpg")
         frame, _ = det.run(path, 0)
