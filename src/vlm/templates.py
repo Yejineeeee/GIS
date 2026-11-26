@@ -46,8 +46,8 @@ def _what(observed, use_vlm_facts=False):
             else f"연기가 {spread} 있다"
     else:
         head = "연기가 탐지되었다"
-    if observed.get("flame_visible"):
-        head += ". 불꽃도 함께 보인다"
+    if observed.get("flame_visible"):      # VLM 이 불꽃이 보인다고 했을 때 (따로 묻는 질문, 열에 둘은 틀림)
+        head += ". 불꽃으로 보이는 것이 있다"
     return head
 
 

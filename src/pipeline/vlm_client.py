@@ -58,6 +58,11 @@ MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"
 VERIFY_PROMPT = "이 사진에 연기가 있는가. 예 또는 아니오로만 답하라."
 VERIFY_YES, VERIFY_NO = 127027, 52959    # "예", "아"(아니오의 첫 토큰), Qwen2.5-VL 토크나이저
 VERIFY_PX = 448
+
+# 불꽃은 따로 묻는다 (docs/vlm_flame_obs.md). 구조화 질문에 섞어 물으면 불꽃 19장 중 0장을 "있다"고
+# 했지만, 같은 조각에 이 질문만 하면 AUC 0.86 이었다(docs/vlm_compare.md). 문턱은 검증기와 같은 0.7
+FLAME_PROMPT = "이 사진에 불꽃이 보이는가. 예 또는 아니오로만 답하라."
+FLAME_TAU = 0.7
 DESC_MIN_SIDE = 96       # 설명 조각이 너무 작으면 모델이 아무것도 못 본다 (tools/prep_crops.py 와 같음)
 
 
@@ -190,13 +195,23 @@ class VLM:
 
     def p_smoke(self, image_path, bbox):
         """탐지 하나가 연기인지 P(예)/(P(예)+P(아니오)). (확률, 걸린 ms). none 이면 (None, None)."""
+        return self.p_yes(image_path, bbox, VERIFY_PROMPT)
+
+    def p_flame(self, image_path, bbox):
+        """같은 조각에 불꽃이 보이는지 따로 묻는다. (확률, 걸린 ms). fake 는 0.0"""
+        if self.mode == "fake":
+            return 0.0, 0
+        return self.p_yes(image_path, bbox, FLAME_PROMPT)
+
+    def p_yes(self, image_path, bbox, prompt):
+        """검증기와 같은 조각(박스 사방 25%, 448px)에 예/아니오 질문을 하고 첫 토큰 P(예)/(P(예)+P(아니오))."""
         t0 = time.perf_counter()
         if self.mode == "none":
             return None, None
         if self.mode == "fake":
             return 1.0, 0
         if self.mode == "gguf":
-            return self._p_smoke_gguf(image_path, bbox, t0)
+            return self._p_yes_gguf(image_path, bbox, prompt, t0)
         import torch
         from PIL import Image
         img = Image.open(image_path).convert("RGB")
@@ -207,7 +222,7 @@ class VLM:
             ip.max_pixels, ip.min_pixels = VERIFY_PX * VERIFY_PX, 256 * 256
             try:
                 msg = [{"role": "user", "content": [{"type": "image", "image": crop},
-                                                    {"type": "text", "text": VERIFY_PROMPT}]}]
+                                                    {"type": "text", "text": prompt}]}]
                 inp = self.processor.apply_chat_template(
                     msg, add_generation_prompt=True, tokenize=True,
                     return_dict=True, return_tensors="pt").to(self.model.device)
@@ -256,7 +271,7 @@ class VLM:
             ob = None
         return ob, ms, raw
 
-    def _p_smoke_gguf(self, image_path, bbox, t0):
+    def _p_yes_gguf(self, image_path, bbox, prompt, t0):
         """검증 질문의 첫 토큰 확률. llama-server 의 top_logprobs 에서 "예"와 "아(니오)"를 찾는다.
         둘 다 없으면 답한 글자로 1 또는 0 을 준다."""
         import math
@@ -265,7 +280,7 @@ class VLM:
         crop = crop_det(img, bbox, min_side=max(160, img.size[0] // 6))
         body = {"messages": [{"role": "user", "content": [
                     {"type": "image_url", "image_url": {"url": self._b64(crop)}},
-                    {"type": "text", "text": VERIFY_PROMPT}]}],
+                    {"type": "text", "text": prompt}]}],
                 "max_tokens": 1, "temperature": 0, "top_k": 1, "logprobs": True, "top_logprobs": 20}
         with self.lock:
             d = self._post(body)
