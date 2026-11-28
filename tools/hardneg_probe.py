@@ -12,12 +12,14 @@ VLM 은 그대로 두고 답하기 직전의 내부 값(마지막 층, 마지막
     python tools/hardneg_probe.py eval --out runs/hardneg
     python tools/hardneg_probe.py thr --out runs/hardneg
     python tools/hardneg_probe.py final --out runs/hardneg
+    python tools/hardneg_probe.py lopo --out runs/hardneg
 
 prep   학습 사진에 탐지기를 돌려 조각과 정답(연기 라벨과 겹치면 연기)을 만든다. VLM 은 쓰지 않는다
 feats  학습 조각과 두 평가 세트의 기존 조각에서 VLM 특징을 뽑는다(GPU)
 eval   분류기를 학습하고 지금 검증기 P(예)와 견준다(문턱 0.7)
 thr    학습 조각 교차검증으로 문턱을 정해 본다
 final  문턱 0.5, 지금 검증기와 둘 다 통과해야 남기는 경우
+lopo   장소를 하나씩 빼고 학습해 뺀 장소에서 잰다(처음 보는 장소)
 """
 import argparse
 import glob
@@ -268,6 +270,58 @@ def cmd_final(a):
     json.dump(report, open(out / "report_tau05.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 
+def cmd_lopo(a):
+    """장소를 하나씩 빼고 학습해, 뺀 장소의 조각을 처음 보는 장소로 시험한다 (leave-one-place-out).
+    150장 세트의 안개연무는 학습과 장소가 겹쳐서, 학습 조각 안에서 장소 단위로 다시 잰다.
+    같은 조각에 지금 검증기(P(예) 0.7)를 쓴 결과도 함께 적는다."""
+    import numpy as np
+    from collections import defaultdict
+    out = Path(a.out)
+    tr = [json.loads(l) for l in open(out / "train.jsonl", encoding="utf-8")]
+    F = np.load(out / "feat_train.npz")
+    X, p_old = F[a.layer], F["p"]
+    y = np.array([r["smoke"] for r in tr], dtype=int)
+    place = np.array([r["place"] for r in tr])
+    kind = np.array(["연기" if r["smoke"] else r["kind"] for r in tr])
+    q = np.zeros(len(y))
+    for pl in sorted(set(place)):
+        m = place == pl
+        q[m] = Logit(a.C).fit(X[~m], y[~m]).proba(X[m])
+    report = {}
+    for k in ("연기", "안개연무", "굴뚝연기", "구름", "백색회색연기", "흑색연기"):
+        rows = defaultdict(lambda: [0, 0, 0])      # 장소 -> [수, 분류기 맞힘, 지금 검증기 맞힘]
+        for i in np.where(kind == k)[0]:
+            good_new = q[i] >= 0.5 if k == "연기" else q[i] < 0.5
+            good_old = p_old[i] >= 0.7 if k == "연기" else p_old[i] < 0.7
+            r = rows[place[i]]
+            r[0] += 1; r[1] += int(good_new); r[2] += int(good_old)
+        if not rows:
+            continue
+        tot = [sum(v[j] for v in rows.values()) for j in range(3)]
+        what = "남김" if k == "연기" else "거름"
+        report[k] = {"기준": what, "전체": {"수": tot[0], "분류기": tot[1], "지금 검증기": tot[2]},
+                     "장소별": {pl: {"수": v[0], "분류기": v[1], "지금 검증기": v[2]} for pl, v in sorted(rows.items())}}
+        print(f"{k} ({what}): 분류기 {tot[1]}/{tot[0]}, 지금 검증기 {tot[2]}/{tot[0]}")
+        for pl, v in sorted(rows.items()):
+            print(f"    {pl}: {v[1]}/{v[0]} (지금 {v[2]}/{v[0]})")
+    # 연기를 지금 검증기와 같은 수만큼 남기는 문턱에서 견준다 (문턱이 달라 생기는 차이를 없앤다)
+    k_old = int((p_old[y == 1] >= 0.7).sum())
+    tau_m = float(np.sort(q[y == 1])[::-1][k_old - 1])
+    same = {"문턱": round(tau_m, 3), "연기 남김": f"{int((q[y == 1] >= tau_m).sum())}/{int(y.sum())}"}
+    for k in ("안개연무", "굴뚝연기", "구름", "백색회색연기", "흑색연기"):
+        m = kind == k
+        same[k] = {"분류기": f"{int((q[m] < tau_m).sum())}/{int(m.sum())}",
+                   "지금 검증기": f"{int((p_old[m] < 0.7).sum())}/{int(m.sum())}"}
+    report["같은 연기 남김에서"] = same
+    print("같은 연기 남김에서", json.dumps(same, ensure_ascii=False))
+    pos, neg = q[y == 1], q[y == 0]
+    report["AUC"] = {"분류기": round(auc(list(pos), list(neg)), 3),
+                     "지금 검증기": round(auc(list(p_old[y == 1]), list(p_old[y == 0])), 3)}
+    report["AUC"] = {k: float(v) for k, v in report["AUC"].items()}
+    print("AUC", report["AUC"])
+    json.dump(report, open(out / "report_lopo.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
 class Logit:
     """표준화 + L2 로지스틱 회귀 (클래스 균형 가중치). sklearn 없이 torch LBFGS 로 푼다.
     C 는 sklearn 과 같은 뜻(작을수록 규제가 세다)."""
@@ -331,10 +385,12 @@ def main():
     p.add_argument("--cfg", nargs=2, action="append", metavar=("LAYER", "C"),
                    type=lambda v: float(v) if v[0].isdigit() else v)
     p = sub.add_parser("final"); p.add_argument("--out", default="runs/hardneg"); p.add_argument("--C", type=float, default=0.01)
+    p = sub.add_parser("lopo"); p.add_argument("--out", default="runs/hardneg")
+    p.add_argument("--C", type=float, default=0.01); p.add_argument("--layer", default="last")
     a = ap.parse_args()
     if a.cmd == "thr" and not a.cfg:
         a.cfg = [("last", 0.01), ("mid", 0.01)]
-    {"prep": cmd_prep, "feats": cmd_feats, "eval": cmd_eval, "thr": cmd_thr, "final": cmd_final}[a.cmd](a)
+    {"prep": cmd_prep, "feats": cmd_feats, "eval": cmd_eval, "thr": cmd_thr, "final": cmd_final, "lopo": cmd_lopo}[a.cmd](a)
 
 
 if __name__ == "__main__":
