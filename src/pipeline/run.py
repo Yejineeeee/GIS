@@ -498,7 +498,8 @@ def main():
                 return
             cur["verifier"] = verifier_of(det)
             if cur.get("observed"):     # 설명이 검증보다 먼저 붙었다 (관찰 재사용, 7.4). 검증 결과를 넣어 다시 만든다
-                cur["description"] = templates.build(cur["observed"], cur)
+                cur["description"] = templates.build(
+                    dict(cur["observed"], chimney=bool(pub.chimney.get(aid))), cur)   # 굴뚝 값도 같이 (위험도와 맞게)
             snap = json.loads(json.dumps(cur))
         pub.send(snap)
         pub.note(alert_id=aid, stage="갱신 검증", detection_id=det.get("id"), p_smoke=cur["verifier"]["p_smoke"],

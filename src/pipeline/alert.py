@@ -76,11 +76,12 @@ class Publisher:
         self.log = open(self.out / "alerts.jsonl", "w", encoding="utf-8")
         self.debug = open(self.out / "debug.jsonl", "w", encoding="utf-8")
         self.lock = threading.Lock()
+        self.chimney = {}      # alert_id -> VLM 이 굴뚝·설비 연기로 봤는지 (알람 형식에는 칸이 없어 여기 둔다)
 
     def send(self, alert):
         # 위험도는 판정, 반경 안 건물, 검증기, 불꽃(설명)에 따라 바뀐다. 낼 때마다 다시 계산한다
         if "risk" in alert:
-            r = risk.assess(alert)
+            r = risk.assess(alert, chimney=self.chimney.get(alert["alert_id"], False))
             alert["risk"] = {"level": r["level"], "reason": r["reason"]}
         with self.lock:
             path = self.out / "alerts" / f"{alert['alert_id']}.json"
@@ -172,6 +173,7 @@ class Describer:
         """
         aid = alert["alert_id"]
         observed, vlm_ms, raw, reused = self.obs.get(aid), 0, None, aid in self.obs
+        p_flame = flame_ms = chimney = chimney_probs = chimney_ms = None
         if reused:
             if self._stale(alert):     # 더 새 판의 작업이 뒤따른다. 그쪽에서 만든다
                 return
@@ -188,11 +190,25 @@ class Describer:
                     return
             else:
                 bbox = self.bbox_of(alert["detection_id"]) if self.bbox_of else None
+                # 불꽃은 구조화 질문의 답을 쓰지 않고 같은 조각에 따로 묻는다 (docs/vlm_flame_obs.md).
+                # 검증기와 같은 조각이라, 설명보다 먼저 물어야 llama-server 가 방금 본 조각을 다시 쓴다.
+                # 불꽃과 굴뚝도 연기 색처럼 사건마다 한 번만 묻고 갱신된 판에는 다시 쓴다
+                if bbox and image_path and hasattr(self.vlm, "p_flame"):
+                    p_flame, flame_ms = self.vlm.p_flame(str(image_path), bbox)
+                # 굴뚝은 사진 전체로 묻는다. 알람 형식(observed)에는 칸이 없어 위험도와 그 근거에만 반영한다
+                if image_path and hasattr(self.vlm, "is_chimney"):
+                    chimney, chimney_probs, chimney_ms = self.vlm.is_chimney(str(image_path))
+                    if chimney is not None:
+                        self.pub.chimney[aid] = chimney
                 observed, vlm_ms, raw = self.vlm.observe(str(image_path) if image_path else None, bbox)
                 if observed is None:
                     self.pub.note(alert_id=aid, stage="설명", error=f"스키마 실패: {raw[:200]}")
                     print(f"     {aid} 설명 실패: VLM 출력이 스키마와 다름")
                     return
+                if p_flame is not None:
+                    from vlm_client import FLAME_TAU
+                    observed["flame_visible"] = p_flame >= FLAME_TAU
+                vlm_ms = (vlm_ms or 0) + (flame_ms or 0) + (chimney_ms or 0)
                 self.obs[aid] = observed
         # 지금 알람(그 사이 갱신됐으면 새 위치)에 문장을 만들어 낸다
         lock = self.lock or contextlib.nullcontext()
@@ -202,7 +218,7 @@ class Describer:
             if target.get("description"):      # 이미 붙었다 (앞선 작업)
                 return
             t_ref = self.t_pub.get(target["detection_id"], t_alert)
-            desc = templates.build(observed, target)
+            desc = templates.build(dict(observed, chimney=bool(self.pub.chimney.get(aid))), target)
             target["observed"] = observed
             target["description"] = desc
             target["description_method"] = "구조화템플릿"
@@ -217,7 +233,9 @@ class Describer:
                 cur["latency_ms"]["alert_to_description"] = target["latency_ms"]["alert_to_description"]
         bad = verify.check(desc, target, observed)
         self.pub.note(alert_id=aid, stage="설명", violations=bad, raw=raw, reused_observation=reused,
-                      described_detection=target["detection_id"], requested_detection=alert["detection_id"])
+                      described_detection=target["detection_id"], requested_detection=alert["detection_id"],
+                      p_flame=None if p_flame is None else round(p_flame, 3), flame_ms=flame_ms,
+                      chimney=chimney, situation=chimney_probs, chimney_ms=chimney_ms)
         self.done.append((aid, target["latency_ms"]["alert_to_description"], desc))
         print(f"     {aid} 설명 (알람 후 {target['latency_ms']['alert_to_description']}ms"
               + (", 관찰 재사용" if reused else "") + f"): {desc}")

@@ -46,8 +46,8 @@ def _what(observed, use_vlm_facts=False):
             else f"연기가 {spread} 있다"
     else:
         head = "연기가 탐지되었다"
-    if observed.get("flame_visible"):
-        head += ". 불꽃도 함께 보인다"
+    if observed.get("flame_visible"):      # VLM 이 불꽃이 보인다고 했을 때 (따로 묻는 질문, 열에 둘은 틀림)
+        head += ". 불꽃으로 보이는 것이 있다"
     return head
 
 
@@ -122,7 +122,7 @@ def _near(observed, alert, rich=False):
 def _risk(observed, alert):
     """위험도와 그 근거, 권고. 규칙은 risk.py 에 있다(초안)."""
     import risk
-    r = risk.assess(alert, flame=bool(observed.get("flame_visible")))
+    r = risk.assess(alert, flame=bool(observed.get("flame_visible")), chimney=bool(observed.get("chimney")))
     text = f"위험도 {r['level']}: {r['reason']}"
     # 권고는 위치가 확실하지 않을 때만. 3번 줄의 근거에는 이미 들어 있다
     if alert.get("location_verdict") == "모호":
