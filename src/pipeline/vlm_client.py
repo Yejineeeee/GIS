@@ -66,6 +66,17 @@ FLAME_TAU = 0.7
 # gguf(Q4_K_M, CPU 현장 하한 구성)는 확률이 전체로 높게 나와 문턱 0.7 에서 헛말이 38장 중 12장이고,
 # 캐시가 맞지 않으면 질문 한 번에 16초가 더 든다. 그래서 qwen(nf4, 소형 GPU 기기)에서만 묻는다
 FLAME_MODES = ("qwen", "fake")
+
+# 굴뚝은 사진 전체를 보여 주고 넷 중 하나를 고르게 한다 (tools/vlm_situation.py 와 같은 질문, docs/vlm_situation.md).
+# "2" 가 가장 높으면 굴뚝으로 본다. 산불 사진을 굴뚝이라고 한 적은 130장 중 0장이지만, 공장 지대 밖의 굴뚝은
+# 잘 못 찾는다(15장 중 1장). 사진 전체는 CPU 에서 40초가 넘어 불꽃과 같이 GPU 구성에서만 묻는다
+SITUATION_PROMPT = ("드론으로 찍은 사진이다. 사진에 보이는 것을 아래에서 하나 골라 번호만 답하라.\n"
+                    "1 산이나 들에서 난 불의 연기\n"
+                    "2 굴뚝이나 공장, 건물 설비에서 나오는 연기나 수증기\n"
+                    "3 구름이나 안개\n"
+                    "4 연기가 없다")
+SITUATION_CHOICES = ("산불", "굴뚝", "구름", "없음")
+CHIMNEY_MODES = ("qwen", "fake")
 DESC_MIN_SIDE = 96       # 설명 조각이 너무 작으면 모델이 아무것도 못 본다 (tools/prep_crops.py 와 같음)
 
 
@@ -208,6 +219,39 @@ class VLM:
         if self.mode == "fake":
             return 0.0, 0
         return self.p_yes(image_path, bbox, FLAME_PROMPT)
+
+    def situation(self, image_path):
+        """사진 전체(긴 변 1024)에 상황 질문을 하고 넷의 확률을 돌려준다. ({산불, 굴뚝, 구름, 없음: 확률}, ms).
+        CHIMNEY_MODES 밖이면 (None, None). fake 는 늘 산불."""
+        t0 = time.perf_counter()
+        if self.mode not in CHIMNEY_MODES:
+            return None, None
+        if self.mode == "fake":
+            return {"산불": 1.0, "굴뚝": 0.0, "구름": 0.0, "없음": 0.0}, 0
+        import torch
+        from PIL import Image
+        img = Image.open(image_path).convert("RGB")
+        img.thumbnail((1024, 1024))
+        tok = self.processor.tokenizer
+        ids = [tok.encode(n, add_special_tokens=False)[0] for n in "1234"]
+        with self.lock:
+            msg = [{"role": "user", "content": [{"type": "image", "image": img},
+                                                {"type": "text", "text": SITUATION_PROMPT}]}]
+            inp = self.processor.apply_chat_template(
+                msg, add_generation_prompt=True, tokenize=True,
+                return_dict=True, return_tensors="pt").to(self.model.device)
+            with torch.inference_mode():
+                pr = torch.softmax(self.model(**inp).logits[0, -1].float(), -1)
+        v = [float(pr[i]) for i in ids]
+        tot = sum(v) or 1.0
+        return {c: round(x / tot, 4) for c, x in zip(SITUATION_CHOICES, v)}, round((time.perf_counter() - t0) * 1000)
+
+    def is_chimney(self, image_path):
+        """굴뚝·설비 연기로 보이는지. (True/False 또는 None, 확률 dict, ms)"""
+        probs, ms = self.situation(image_path)
+        if probs is None:
+            return None, None, None
+        return max(probs, key=probs.get) == "굴뚝", probs, ms
 
     def p_yes(self, image_path, bbox, prompt):
         """검증기와 같은 조각(박스 사방 25%, 448px)에 예/아니오 질문을 하고 첫 토큰 P(예)/(P(예)+P(아니오))."""
